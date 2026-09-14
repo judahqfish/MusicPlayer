@@ -7,10 +7,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
@@ -29,24 +30,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _controller = MutableStateFlow<MediaController?>(null)
     val controller: StateFlow<MediaController?> = _controller
     private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var connecting = false
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message
 
     init {
-        viewModelScope.launch {
-            val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
-            controllerFuture = MediaController.Builder(app, token).buildAsync()
-            _controller.value = controllerFuture!!.await()
-            _controller.value?.setPlaybackSpeed(speed.value)
-        }
+        connectController()
         viewModelScope.launch {
             speed.drop(1).collect { _controller.value?.setPlaybackSpeed(it) }
         }
     }
 
+    private fun connectController() {
+        if (connecting || _controller.value != null) return
+        connecting = true
+        viewModelScope.launch {
+            try {
+                repeat(3) { attempt ->
+                    try {
+                        val token = SessionToken(application, ComponentName(application, PlaybackService::class.java))
+                        controllerFuture = MediaController.Builder(application, token).buildAsync()
+                        val connected = controllerFuture!!.await()
+                        connected.setPlaybackSpeed(speed.value)
+                        _controller.value = connected
+                        return@launch
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Throwable) {
+                        controllerFuture?.let { runCatching { MediaController.releaseFuture(it) } }
+                        controllerFuture = null
+                        if (attempt < 2) delay(600L * (attempt + 1))
+                    }
+                }
+                _message.value = "Playback service could not start. Please reopen the app."
+            } finally {
+                connecting = false
+            }
+        }
+    }
+
     override fun onCleared() {
-        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controllerFuture?.let { runCatching { MediaController.releaseFuture(it) } }
         super.onCleared()
     }
 
@@ -86,23 +111,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setSpeed(value: Float) = viewModelScope.launch { prefs.setSpeed(value) }
 
     fun playTracks(queue: List<TrackEntity>, startTrackId: Long, shuffle: Boolean = false) {
-        val c = _controller.value ?: return
-        val start = queue.indexOfFirst { it.id == startTrackId }.coerceAtLeast(0)
-        val items = queue.map { track ->
+        val c = _controller.value
+        if (c == null) {
+            connectController()
+            _message.value = "Starting playback service… tap the track again in a moment."
+            return
+        }
+        val available = queue.filterNot { it.unavailable }
+        if (available.isEmpty()) {
+            _message.value = "No available audio files in this queue."
+            return
+        }
+        val start = available.indexOfFirst { it.id == startTrackId }.let { if (it >= 0) it else 0 }
+        val items = available.map { track ->
             MediaItem.Builder()
                 .setMediaId(track.id.toString())
                 .setUri(track.uri)
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(track.title()).build())
                 .build()
         }
-        c.setMediaItems(items, start, queue.getOrNull(start)?.lastPositionMs ?: 0L)
-        c.shuffleModeEnabled = shuffle
-        c.prepare()
-        c.play()
+        runCatching {
+            c.setMediaItems(items, start, available.getOrNull(start)?.lastPositionMs ?: 0L)
+            c.shuffleModeEnabled = shuffle
+            c.prepare()
+            c.play()
+        }.onFailure {
+            _message.value = "That file could not be played."
+        }
     }
 
     fun playPause() {
-        _controller.value?.let { if (it.isPlaying) it.pause() else it.play() }
+        val c = _controller.value
+        if (c == null) connectController() else if (c.isPlaying) c.pause() else c.play()
     }
 
     fun next() { _controller.value?.seekToNextMediaItem() }
