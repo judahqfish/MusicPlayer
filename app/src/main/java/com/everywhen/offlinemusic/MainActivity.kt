@@ -20,10 +20,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val crash = (application as MusicApplication).takeLastCrash()
+        val versionName = packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         setContent {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
                 if (crash != null) {
-                    CrashReportScreen(crash) { recreate() }
+                    CrashReportScreen(versionName, crash) { recreate() }
                 } else {
                     val vm: MainViewModel = viewModel()
                     Column(Modifier.fillMaxSize().systemBarsPadding()) {
@@ -34,7 +35,7 @@ class MainActivity : ComponentActivity() {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "MusicPlayer v${BuildConfig.VERSION_NAME}",
+                                    "MusicPlayer v$versionName",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -51,7 +52,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun CrashReportScreen(crash: String, onContinue: () -> Unit) {
+private fun CrashReportScreen(versionName: String, crash: String, onContinue: () -> Unit) {
     Surface(Modifier.fillMaxSize()) {
         Column(
             Modifier
@@ -60,7 +61,7 @@ private fun CrashReportScreen(crash: String, onContinue: () -> Unit) {
                 .padding(20.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Text("MusicPlayer v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelMedium)
+            Text("MusicPlayer v$versionName", style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.height(8.dp))
             Text("MusicPlayer crashed", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(12.dp))
