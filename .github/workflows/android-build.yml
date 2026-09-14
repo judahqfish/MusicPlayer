@@ -22,7 +22,13 @@ jobs:
         run: |
           rm -f app/src/main/res/drawable/app_icon.xml
           mkdir -p app/src/main/res/drawable
-          base64 --decode app/src/main/icon/app_icon.b64 > app/src/main/res/drawable/app_icon.jpg
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          src = Path('app/src/main/icon/app_icon.b64').read_text()
+          cleaned = ''.join(src.split())
+          Path('app/src/main/res/drawable/app_icon.jpg').write_bytes(base64.b64decode(cleaned, validate=False))
+          PY
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
