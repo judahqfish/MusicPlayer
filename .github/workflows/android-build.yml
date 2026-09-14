@@ -18,6 +18,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.6.0'
+      - name: Install selected launcher icon
+        run: |
+          rm -f app/src/main/res/drawable/app_icon.xml
+          mkdir -p app/src/main/res/drawable
+          base64 --decode app/src/main/icon/app_icon.b64 > app/src/main/res/drawable/app_icon.jpg
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
