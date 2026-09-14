@@ -12,7 +12,8 @@ import kotlinx.coroutines.*
 class PlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private lateinit var session: MediaSession
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // ExoPlayer must only be touched from its application thread (main).
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val dao by lazy { (application as MusicApplication).database.musicDao() }
     private var lastTrackId: Long? = null
     private var lastPositionSnapshot: Long = 0
@@ -35,7 +36,7 @@ class PlaybackService : MediaSessionService() {
                 val old = lastTrackId
                 if (old != null) {
                     val positionToSave = if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) 0L else lastPositionSnapshot
-                    scope.launch { runCatching { dao.savePosition(old, positionToSave) } }
+                    persistPosition(old, positionToSave)
                 }
                 lastTrackId = mediaItem?.mediaId?.toLongOrNull()
                 lastPositionSnapshot = player.currentPosition.coerceAtLeast(0)
@@ -47,7 +48,7 @@ class PlaybackService : MediaSessionService() {
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
-                    lastTrackId?.let { id -> scope.launch { runCatching { dao.savePosition(id, 0L) } } }
+                    lastTrackId?.let { persistPosition(it, 0L) }
                 }
             }
         })
@@ -65,12 +66,18 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    private fun persistPosition(id: Long, positionMs: Long) {
+        scope.launch(Dispatchers.IO) {
+            runCatching { dao.savePosition(id, positionMs) }
+        }
+    }
+
     private fun saveCurrentPosition() {
         if (!::player.isInitialized) return
         val id = player.currentMediaItem?.mediaId?.toLongOrNull() ?: return
         val pos = player.currentPosition.coerceAtLeast(0)
         lastPositionSnapshot = pos
-        scope.launch { runCatching { dao.savePosition(id, pos) } }
+        persistPosition(id, pos)
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
