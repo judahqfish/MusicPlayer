@@ -32,7 +32,7 @@ android {
     }
 
     sourceSets.named("main") {
-        res.directories.add(generatedIconResDir.get().asFile)
+        res.directories.add(generatedIconResDir.get().asFile.absolutePath)
     }
 
     buildFeatures { compose = true }
