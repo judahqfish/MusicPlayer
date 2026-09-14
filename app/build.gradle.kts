@@ -4,6 +4,19 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val generatedIconResDir = layout.buildDirectory.dir("generated/appIconRes")
+val generateAppIcon by tasks.registering {
+    val source = file("src/main/icon/app_icon.b64")
+    val output = generatedIconResDir.map { it.file("drawable/app_icon.jpg") }
+    inputs.file(source)
+    outputs.file(output)
+    doLast {
+        val target = output.get().asFile
+        target.parentFile.mkdirs()
+        target.writeBytes(java.util.Base64.getDecoder().decode(source.readText().trim()))
+    }
+}
+
 android {
     namespace = "com.everywhen.offlinemusic"
     compileSdk = 37
@@ -12,10 +25,11 @@ android {
         applicationId = "com.everywhen.offlinemusic"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
+    sourceSets["main"].res.srcDir(generatedIconResDir)
     buildFeatures { compose = true }
 
     compileOptions {
@@ -26,6 +40,10 @@ android {
     packaging {
         resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")
     }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Resources") }.configureEach {
+    dependsOn(generateAppIcon)
 }
 
 kotlin {
