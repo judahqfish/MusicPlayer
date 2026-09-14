@@ -1,22 +1,7 @@
-import java.util.Base64
-
 plugins {
     id("com.android.application")
     id("com.android.legacy-kapt")
     id("org.jetbrains.kotlin.plugin.compose")
-}
-
-val generatedIconResDir = layout.buildDirectory.dir("generated/appIconRes")
-val generateAppIcon = tasks.register("generateAppIcon") {
-    val source = layout.projectDirectory.file("src/main/icon/app_icon.b64")
-    val output = generatedIconResDir.map { it.file("drawable/app_icon.jpg") }
-    inputs.file(source)
-    outputs.file(output)
-    doLast {
-        val target = output.get().asFile
-        target.parentFile.mkdirs()
-        target.writeBytes(Base64.getDecoder().decode(source.asFile.readText().trim()))
-    }
 }
 
 android {
@@ -31,10 +16,6 @@ android {
         versionName = "0.1.1"
     }
 
-    sourceSets.named("main") {
-        res.directories.add(generatedIconResDir.get().asFile.absolutePath)
-    }
-
     buildFeatures { compose = true }
 
     compileOptions {
@@ -44,12 +25,6 @@ android {
 
     packaging {
         resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")
-    }
-}
-
-tasks.configureEach {
-    if (name.startsWith("merge") && name.endsWith("Resources")) {
-        dependsOn(generateAppIcon)
     }
 }
 
