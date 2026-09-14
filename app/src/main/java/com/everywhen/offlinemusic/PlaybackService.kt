@@ -27,6 +27,7 @@ class PlaybackService : MediaSessionService() {
         player = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
         player.addListener(object : Player.Listener {
@@ -34,7 +35,7 @@ class PlaybackService : MediaSessionService() {
                 val old = lastTrackId
                 if (old != null) {
                     val positionToSave = if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) 0L else lastPositionSnapshot
-                    scope.launch { dao.savePosition(old, positionToSave) }
+                    scope.launch { runCatching { dao.savePosition(old, positionToSave) } }
                 }
                 lastTrackId = mediaItem?.mediaId?.toLongOrNull()
                 lastPositionSnapshot = player.currentPosition.coerceAtLeast(0)
@@ -46,7 +47,7 @@ class PlaybackService : MediaSessionService() {
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
-                    lastTrackId?.let { id -> scope.launch { dao.savePosition(id, 0L) } }
+                    lastTrackId?.let { id -> scope.launch { runCatching { dao.savePosition(id, 0L) } } }
                 }
             }
         })
@@ -69,7 +70,7 @@ class PlaybackService : MediaSessionService() {
         val id = player.currentMediaItem?.mediaId?.toLongOrNull() ?: return
         val pos = player.currentPosition.coerceAtLeast(0)
         lastPositionSnapshot = pos
-        scope.launch { dao.savePosition(id, pos) }
+        scope.launch { runCatching { dao.savePosition(id, pos) } }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -81,8 +82,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         saveCurrentPosition()
-        session.release()
-        player.release()
+        if (::session.isInitialized) session.release()
+        if (::player.isInitialized) player.release()
         scope.cancel()
         super.onDestroy()
     }
