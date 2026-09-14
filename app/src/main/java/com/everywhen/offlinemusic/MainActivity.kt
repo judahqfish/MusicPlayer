@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -25,7 +26,24 @@ class MainActivity : ComponentActivity() {
                     CrashReportScreen(crash) { recreate() }
                 } else {
                     val vm: MainViewModel = viewModel()
-                    MusicApp(vm)
+                    Column(Modifier.fillMaxSize().systemBarsPadding()) {
+                        Surface(tonalElevation = 1.dp) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "MusicPlayer v${BuildConfig.VERSION_NAME}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Box(Modifier.weight(1f)) {
+                            MusicApp(vm)
+                        }
+                    }
                 }
             }
         }
@@ -38,9 +56,12 @@ private fun CrashReportScreen(crash: String, onContinue: () -> Unit) {
         Column(
             Modifier
                 .fillMaxSize()
+                .systemBarsPadding()
                 .padding(20.dp)
                 .verticalScroll(rememberScrollState())
         ) {
+            Text("MusicPlayer v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(8.dp))
             Text("MusicPlayer crashed", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(12.dp))
             Text("Please screenshot this screen and send it to me. The crash report stays only on this device.")
