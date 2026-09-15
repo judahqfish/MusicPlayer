@@ -3,6 +3,8 @@ package com.everywhen.offlinemusic
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -42,9 +44,7 @@ fun MusicApp(vm: MainViewModel) {
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             Column {
-                if (controller?.currentMediaItem != null) {
-                    MiniPlayer(vm, onOpen = { showNowPlaying = true })
-                }
+                MiniPlayer(vm, onOpen = { if (controller?.currentMediaItem != null) showNowPlaying = true })
                 NavigationBar {
                     RootScreen.entries.forEach { item ->
                         NavigationBarItem(
@@ -247,36 +247,192 @@ fun SearchScreen(vm: MainViewModel, onBack: () -> Unit) {
 
 @Composable
 fun TrackList(tracks: List<TrackEntity>, vm: MainViewModel, onPlay: (TrackEntity) -> Unit, playlistId: Long? = null) {
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(tracks, key = { it.id }) { track ->
-            TrackRow(track, vm, onPlay, playlistId)
-            HorizontalDivider()
+    var selectedIds by remember(tracks) { mutableStateOf<Set<Long>>(emptySet()) }
+    var playlistPicker by remember { mutableStateOf(false) }
+    var tagPicker by remember { mutableStateOf(false) }
+    val selectionMode = selectedIds.isNotEmpty()
+
+    Column(Modifier.fillMaxSize()) {
+        if (selectionMode) {
+            Surface(tonalElevation = 2.dp) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { selectedIds = emptySet() }) { Icon(Icons.Default.Close, "Cancel selection") }
+                    Text("${selectedIds.size} selected", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = { playlistPicker = true }) { Icon(Icons.Default.PlaylistAdd, "Add to playlist") }
+                    IconButton(onClick = { tagPicker = true }) { Icon(Icons.Default.Label, "Add tags") }
+                    IconButton(onClick = {
+                        vm.setFavoriteForTracks(selectedIds, true)
+                        selectedIds = emptySet()
+                    }) { Icon(Icons.Default.Favorite, "Favorite selected") }
+                }
+            }
+        }
+        LazyColumn(Modifier.weight(1f)) {
+            items(tracks, key = { it.id }) { track ->
+                TrackRow(
+                    track = track,
+                    vm = vm,
+                    onPlay = onPlay,
+                    playlistId = playlistId,
+                    selected = track.id in selectedIds,
+                    selectionMode = selectionMode,
+                    onToggleSelection = {
+                        selectedIds = if (track.id in selectedIds) selectedIds - track.id else selectedIds + track.id
+                    },
+                    onStartSelection = { selectedIds = selectedIds + track.id }
+                )
+                HorizontalDivider()
+            }
         }
     }
+
+    if (playlistPicker) BatchPlaylistDialog(
+        vm = vm,
+        selectedIds = selectedIds,
+        onDismiss = { playlistPicker = false },
+        onDone = { selectedIds = emptySet(); playlistPicker = false }
+    )
+    if (tagPicker) BatchTagDialog(
+        vm = vm,
+        selectedIds = selectedIds,
+        onDismiss = { tagPicker = false },
+        onDone = { selectedIds = emptySet(); tagPicker = false }
+    )
 }
 
 @Composable
-fun TrackRow(track: TrackEntity, vm: MainViewModel, onPlay: (TrackEntity) -> Unit, playlistId: Long?) {
+fun TrackRow(
+    track: TrackEntity,
+    vm: MainViewModel,
+    onPlay: (TrackEntity) -> Unit,
+    playlistId: Long?,
+    selected: Boolean = false,
+    selectionMode: Boolean = false,
+    onToggleSelection: () -> Unit = {},
+    onStartSelection: () -> Unit = {}
+) {
     var menu by remember { mutableStateOf(false) }
     var rename by remember { mutableStateOf(false) }
     var tags by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().clickable { onPlay(track) }.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { vm.toggleFavorite(track) }) { Icon(if (track.favorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, "Favorite") }
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
+        .combinedClickable(
+            onClick = { if (selectionMode) onToggleSelection() else onPlay(track) },
+            onLongClick = onStartSelection
+        )
+        .padding(start = 8.dp)
+
+    Row(rowModifier, verticalAlignment = Alignment.CenterVertically) {
+        if (selectionMode) {
+            Checkbox(selected, onCheckedChange = { onToggleSelection() })
+        } else {
+            IconButton(onClick = { vm.toggleFavorite(track) }) {
+                Icon(if (track.favorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, "Favorite")
+            }
+        }
         Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
             Text(track.title(), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(formatDuration(track.durationMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-            DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem({ Text("Rename display name") }, { menu = false; rename = true })
-                DropdownMenuItem({ Text("Edit tags") }, { menu = false; tags = true })
-                playlistId?.let { pid -> DropdownMenuItem({ Text("Remove from playlist") }, { menu = false; vm.removeFromPlaylist(track.id, pid) }) }
+        if (!selectionMode) {
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                DropdownMenu(menu, { menu = false }) {
+                    DropdownMenuItem({ Text("Rename display name") }, { menu = false; rename = true })
+                    DropdownMenuItem({ Text("Edit tags") }, { menu = false; tags = true })
+                    playlistId?.let { pid ->
+                        DropdownMenuItem({ Text("Remove from playlist") }, { menu = false; vm.removeFromPlaylist(track.id, pid) })
+                    }
+                }
             }
         }
     }
     if (rename) NameDialog("Rename Track", "Display name", initial = track.displayName ?: track.title(), onDismiss = { rename = false }) { vm.renameTrack(track, it); rename = false }
     if (tags) TagEditor(track, vm, onDismiss = { tags = false })
+}
+
+@Composable
+fun BatchPlaylistDialog(vm: MainViewModel, selectedIds: Set<Long>, onDismiss: () -> Unit, onDone: () -> Unit) {
+    val playlists by vm.playlists.collectAsStateWithLifecycle()
+    var createNew by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add ${selectedIds.size} tracks to playlist") },
+        text = {
+            Column {
+                if (playlists.isEmpty()) Text("No playlists yet.")
+                playlists.forEach { playlist ->
+                    ListItem(
+                        headlineContent = { Text(playlist.name) },
+                        supportingContent = { Text("${playlist.count} tracks") },
+                        leadingContent = { Icon(Icons.Default.QueueMusic, null) },
+                        modifier = Modifier.clickable {
+                            vm.addTracksToPlaylist(selectedIds, playlist.id)
+                            onDone()
+                        }
+                    )
+                }
+                TextButton(onClick = { createNew = true }) { Icon(Icons.Default.Add, null); Text(" New playlist") }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+    if (createNew) NameDialog("New Playlist", "Playlist name", onDismiss = { createNew = false }) { name ->
+        vm.createPlaylist(name) { playlistId ->
+            vm.addTracksToPlaylist(selectedIds, playlistId)
+        }
+        createNew = false
+        onDone()
+    }
+}
+
+@Composable
+fun BatchTagDialog(vm: MainViewModel, selectedIds: Set<Long>, onDismiss: () -> Unit, onDone: () -> Unit) {
+    val tags by vm.tags.collectAsStateWithLifecycle()
+    var chosen by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var createNew by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add tags to ${selectedIds.size} tracks") },
+        text = {
+            Column {
+                if (tags.isEmpty()) Text("No tags yet.")
+                tags.forEach { tag ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            chosen = if (tag.id in chosen) chosen - tag.id else chosen + tag.id
+                        },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(tag.id in chosen, onCheckedChange = { checked ->
+                            chosen = if (checked) chosen + tag.id else chosen - tag.id
+                        })
+                        Text(tag.name)
+                    }
+                }
+                TextButton(onClick = { createNew = true }) { Icon(Icons.Default.Add, null); Text(" New tag") }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = chosen.isNotEmpty(),
+                onClick = { vm.addTagsToTracks(selectedIds, chosen); onDone() }
+            ) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+    if (createNew) NameDialog("New Tag", "Tag name", onDismiss = { createNew = false }) { name ->
+        vm.createTag(name) { tagId ->
+            vm.addTagsToTracks(selectedIds, setOf(tagId))
+        }
+        createNew = false
+        onDone()
+    }
 }
 
 @Composable
@@ -312,19 +468,35 @@ fun MiniPlayer(vm: MainViewModel, onOpen: () -> Unit) {
     val controller by vm.controller.collectAsStateWithLifecycle()
     var playing by remember { mutableStateOf(false) }
     var title by remember { mutableStateOf("") }
+    var hasTrack by remember { mutableStateOf(false) }
     LaunchedEffect(controller) {
         while (controller != null) {
             playing = controller?.isPlaying == true
             title = controller?.mediaMetadata?.title?.toString().orEmpty()
-            delay(500)
+            hasTrack = controller?.currentMediaItem != null
+            delay(300)
         }
     }
-    Surface(tonalElevation = 3.dp) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 60.dp).clickable(onClick = onOpen).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(36.dp))
-            Text(title.ifBlank { "Current track" }, modifier = Modifier.weight(1f).padding(horizontal = 10.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            IconButton(onClick = vm::playPause) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause") }
-            IconButton(onClick = vm::next) { Icon(Icons.Default.SkipNext, "Next") }
+    Surface(tonalElevation = 4.dp) {
+        Column(
+            Modifier.fillMaxWidth().clickable(enabled = hasTrack, onClick = onOpen).padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                if (hasTrack) title.ifBlank { "Current track" } else "Playback controls",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = vm::previous, enabled = hasTrack) { Icon(Icons.Default.SkipPrevious, "Previous track") }
+                IconButton(onClick = vm::seekBack, enabled = hasTrack) { Icon(Icons.Default.Replay10, "Back 10 seconds") }
+                FilledIconButton(onClick = vm::playPause, enabled = hasTrack) {
+                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause")
+                }
+                IconButton(onClick = vm::seekForward, enabled = hasTrack) { Icon(Icons.Default.Forward10, "Forward 10 seconds") }
+                IconButton(onClick = vm::next, enabled = hasTrack) { Icon(Icons.Default.SkipNext, "Next track") }
+            }
         }
     }
 }
@@ -362,9 +534,11 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit) {
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = vm::previous, modifier = Modifier.size(64.dp)) { Icon(Icons.Default.SkipPrevious, "Previous") }
-            FilledIconButton(onClick = vm::playPause, modifier = Modifier.size(72.dp)) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause", modifier = Modifier.size(36.dp)) }
-            IconButton(onClick = vm::next, modifier = Modifier.size(64.dp)) { Icon(Icons.Default.SkipNext, "Next") }
+            IconButton(onClick = vm::previous) { Icon(Icons.Default.SkipPrevious, "Previous") }
+            IconButton(onClick = vm::seekBack) { Icon(Icons.Default.Replay10, "Back 10 seconds") }
+            FilledIconButton(onClick = vm::playPause, modifier = Modifier.size(68.dp)) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause", modifier = Modifier.size(34.dp)) }
+            IconButton(onClick = vm::seekForward) { Icon(Icons.Default.Forward10, "Forward 10 seconds") }
+            IconButton(onClick = vm::next) { Icon(Icons.Default.SkipNext, "Next") }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 48.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             IconButton(onClick = vm::toggleShuffle) { Icon(Icons.Default.Shuffle, "Shuffle") }
