@@ -91,21 +91,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (name.isNotBlank()) onCreated(repo.createPlaylist(name))
     }
 
-    fun createTag(name: String) = viewModelScope.launch {
-        if (name.isNotBlank()) repo.createTag(name)
+    fun createTag(name: String, onCreated: (Long) -> Unit = {}) = viewModelScope.launch {
+        if (name.isNotBlank()) onCreated(repo.createTag(name))
     }
 
     fun toggleFavorite(track: TrackEntity) = viewModelScope.launch { repo.dao.setFavorite(track.id, !track.favorite) }
     fun renameTrack(track: TrackEntity, name: String) = viewModelScope.launch { repo.dao.renameTrack(track.id, name.trim().ifBlank { null }) }
 
+    fun setFavoriteForTracks(trackIds: Set<Long>, favorite: Boolean) = viewModelScope.launch {
+        trackIds.forEach { repo.dao.setFavorite(it, favorite) }
+        _message.value = if (favorite) "${trackIds.size} tracks added to Favorites" else "${trackIds.size} tracks removed from Favorites"
+    }
+
     fun addTrackToPlaylist(trackId: Long, playlistId: Long) = viewModelScope.launch {
         repo.dao.addToPlaylist(PlaylistTrackCrossRef(playlistId, trackId, repo.dao.nextPlaylistOrder(playlistId)))
+    }
+
+    fun addTracksToPlaylist(trackIds: Set<Long>, playlistId: Long) = viewModelScope.launch {
+        var order = repo.dao.nextPlaylistOrder(playlistId)
+        trackIds.forEach { trackId ->
+            repo.dao.addToPlaylist(PlaylistTrackCrossRef(playlistId, trackId, order++))
+        }
+        _message.value = "${trackIds.size} tracks added to playlist"
     }
 
     fun removeFromPlaylist(trackId: Long, playlistId: Long) = viewModelScope.launch { repo.dao.removeFromPlaylist(playlistId, trackId) }
 
     fun setTag(trackId: Long, tagId: Long, selected: Boolean) = viewModelScope.launch {
         if (selected) repo.dao.addTrackTag(TrackTagCrossRef(trackId, tagId)) else repo.dao.removeTrackTag(trackId, tagId)
+    }
+
+    fun addTagsToTracks(trackIds: Set<Long>, tagIds: Set<Long>) = viewModelScope.launch {
+        trackIds.forEach { trackId ->
+            tagIds.forEach { tagId -> repo.dao.addTrackTag(TrackTagCrossRef(trackId, tagId)) }
+        }
+        _message.value = "Tags added to ${trackIds.size} tracks"
     }
 
     fun setSpeed(value: Float) = viewModelScope.launch { prefs.setSpeed(value) }
@@ -146,9 +166,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun next() { _controller.value?.seekToNextMediaItem() }
+
     fun previous() {
         _controller.value?.let {
             if (it.currentPosition > 3000) it.seekTo(0) else it.seekToPreviousMediaItem()
+        }
+    }
+
+    fun seekBack() {
+        _controller.value?.let { c -> c.seekTo((c.currentPosition - 10_000L).coerceAtLeast(0L)) }
+    }
+
+    fun seekForward() {
+        _controller.value?.let { c ->
+            val duration = c.duration.takeIf { it > 0 }
+            val target = c.currentPosition + 10_000L
+            c.seekTo(if (duration != null) target.coerceAtMost(duration) else target)
         }
     }
 
