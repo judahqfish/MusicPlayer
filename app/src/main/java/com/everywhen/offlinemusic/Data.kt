@@ -2,6 +2,8 @@ package com.everywhen.offlinemusic
 
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "tracks", indices = [Index(value = ["uri"], unique = true)])
@@ -14,10 +16,27 @@ data class TrackEntity(
     val dateAdded: Long = System.currentTimeMillis(),
     val favorite: Boolean = false,
     val lastPositionMs: Long = 0,
-    val unavailable: Boolean = false
+    val unavailable: Boolean = false,
+    val artist: String? = null,
+    val album: String? = null,
+    val metadataScanned: Boolean = false
 ) {
-    fun title(): String = displayName?.takeIf { it.isNotBlank() }
+    private fun baseTitle(): String = displayName?.takeIf { it.isNotBlank() }
         ?: fileName.substringBeforeLast('.', fileName)
+
+    // Album comes first intentionally: A–Z/name sorting keeps each album together,
+    // then sorts by the track name within that album.
+    fun title(): String {
+        val base = baseTitle()
+        val cleanAlbum = album?.takeIf { it.isNotBlank() }
+        val cleanArtist = artist?.takeIf { it.isNotBlank() }
+        return when {
+            cleanAlbum != null && cleanArtist != null -> "$cleanAlbum · $base — $cleanArtist"
+            cleanAlbum != null -> "$cleanAlbum · $base"
+            cleanArtist != null -> "$base — $cleanArtist"
+            else -> base
+        }
+    }
 }
 
 @Entity(tableName = "playlists")
@@ -79,6 +98,9 @@ interface MusicDao {
     @Query("SELECT * FROM tracks WHERE uri = :uri LIMIT 1")
     suspend fun trackByUri(uri: String): TrackEntity?
 
+    @Query("SELECT * FROM tracks WHERE metadataScanned = 0")
+    suspend fun tracksNeedingMetadata(): List<TrackEntity>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTrack(track: TrackEntity): Long
 
@@ -90,10 +112,13 @@ interface MusicDao {
     @Query("UPDATE tracks SET displayName = :name WHERE id = :id")
     suspend fun renameTrack(id: Long, name: String?)
 
+    @Query("UPDATE tracks SET artist = :artist, album = :album, durationMs = :duration, metadataScanned = 1 WHERE id = :id")
+    suspend fun updateMetadata(id: Long, artist: String?, album: String?, duration: Long)
+
     @Query("UPDATE tracks SET lastPositionMs = :position WHERE id = :id")
     suspend fun savePosition(id: Long, position: Long)
 
-    @Query("UPDATE tracks SET uri = :uri, fileName = :fileName, durationMs = :duration, unavailable = 0 WHERE id = :id")
+    @Query("UPDATE tracks SET uri = :uri, fileName = :fileName, durationMs = :duration, unavailable = 0, metadataScanned = 0 WHERE id = :id")
     suspend fun relinkTrack(id: Long, uri: String, fileName: String, duration: Long)
 
     @Delete suspend fun deleteTrack(track: TrackEntity)
@@ -150,23 +175,31 @@ interface MusicDao {
     @Query("DELETE FROM track_tags WHERE trackId = :trackId AND tagId = :tagId")
     suspend fun removeTrackTag(trackId: Long, tagId: Long)
 
-    @Query("SELECT * FROM tracks WHERE fileName LIKE '%' || :q || '%' OR displayName LIKE '%' || :q || '%' ORDER BY fileName COLLATE NOCASE")
+    @Query("SELECT * FROM tracks WHERE fileName LIKE '%' || :q || '%' OR displayName LIKE '%' || :q || '%' OR artist LIKE '%' || :q || '%' OR album LIKE '%' || :q || '%' ORDER BY fileName COLLATE NOCASE")
     fun searchTracks(q: String): Flow<List<TrackEntity>>
 }
 
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackCrossRef::class, TagEntity::class, TrackTagCrossRef::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun musicDao(): MusicDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN artist TEXT")
+                db.execSQL("ALTER TABLE tracks ADD COLUMN album TEXT")
+                db.execSQL("ALTER TABLE tracks ADD COLUMN metadataScanned INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun create(context: Context): MusicDatabase = Room.databaseBuilder(
             context.applicationContext,
             MusicDatabase::class.java,
             "offline_music.db"
-        ).build()
+        ).addMigrations(MIGRATION_1_2).build()
     }
 }
