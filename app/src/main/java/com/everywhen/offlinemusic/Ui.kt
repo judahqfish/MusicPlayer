@@ -331,12 +331,10 @@ private fun PlaylistTrackRow(
             }
         }
         Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
-            Text(track.title(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(track.title(), maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(formatDuration(track.durationMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (!selectionMode) {
-            IconButton(onClick = { onMove(index, index - 1) }, enabled = index > 0) { Icon(Icons.Default.KeyboardArrowUp, "Move up") }
-            IconButton(onClick = { onMove(index, index + 1) }, enabled = index < lastIndex) { Icon(Icons.Default.KeyboardArrowDown, "Move down") }
             Icon(
                 Icons.Default.DragHandle,
                 "Long-press and drag to reorder",
@@ -365,6 +363,8 @@ private fun PlaylistTrackRow(
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                 DropdownMenu(menu, { menu = false }) {
+                    DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; onMove(index, index - 1) }, enabled = index > 0)
+                    DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; onMove(index, index + 1) }, enabled = index < lastIndex)
                     DropdownMenuItem({ Text("Rename display name") }, { menu = false; rename = true })
                     DropdownMenuItem({ Text("Edit tags") }, { menu = false; tags = true })
                     DropdownMenuItem({ Text("Remove from playlist") }, { menu = false; vm.removeFromPlaylist(track.id, playlistId) })
@@ -534,7 +534,7 @@ fun TrackRow(
             }
         }
         Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
-            Text(track.title(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(track.title(), maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(formatDuration(track.durationMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (!selectionMode) {
