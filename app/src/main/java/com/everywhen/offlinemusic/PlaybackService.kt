@@ -1,16 +1,23 @@
 package com.everywhen.offlinemusic
 
+import android.content.Context
 import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 
+@OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private lateinit var session: MediaSession
@@ -31,7 +38,27 @@ class PlaybackService : MediaSessionService() {
             .setUsage(C.USAGE_MEDIA)
             .build()
 
-        player = ExoPlayer.Builder(this)
+        val visualizationProcessor = TeeAudioProcessor(VisualizationAudioSink())
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+                enableOffload: Boolean
+            ): AudioSink? {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setOffloadMode(
+                        if (enableOffload) DefaultAudioSink.OFFLOAD_MODE_ENABLED_GAPLESS_REQUIRED
+                        else DefaultAudioSink.OFFLOAD_MODE_DISABLED
+                    )
+                    .setAudioProcessors(arrayOf(visualizationProcessor))
+                    .build()
+            }
+        }
+
+        player = ExoPlayer.Builder(this, renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
@@ -131,6 +158,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         saveCurrentPosition()
+        AudioVisualizationBus.clear()
         runCatching { enhancer?.release() }
         enhancer = null
         if (::session.isInitialized) session.release()
