@@ -97,12 +97,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (name.isNotBlank()) onCreated(repo.createTag(name))
     }
 
+    fun createTagsFromText(raw: String, trackIds: Set<Long> = emptySet()) = viewModelScope.launch {
+        val names = raw
+            .split(',', ';', '\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinctBy { it.lowercase() }
+        if (names.isEmpty()) return@launch
+
+        var applied = 0
+        names.forEach { name ->
+            val existing = tags.value.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            val tagId = existing?.id ?: repo.createTag(name).takeIf { it > 0 }
+            if (tagId != null) {
+                trackIds.forEach { trackId -> repo.dao.addTrackTag(TrackTagCrossRef(trackId, tagId)) }
+                applied++
+            }
+        }
+        _message.value = if (trackIds.isEmpty()) {
+            "$applied tags created or already available"
+        } else {
+            "$applied tags applied to ${trackIds.size} tracks"
+        }
+    }
+
     fun toggleFavorite(track: TrackEntity) = viewModelScope.launch { repo.dao.setFavorite(track.id, !track.favorite) }
     fun renameTrack(track: TrackEntity, name: String) = viewModelScope.launch { repo.dao.renameTrack(track.id, name.trim().ifBlank { null }) }
 
     fun setFavoriteForTracks(trackIds: Set<Long>, favorite: Boolean) = viewModelScope.launch {
         trackIds.forEach { repo.dao.setFavorite(it, favorite) }
         _message.value = if (favorite) "${trackIds.size} tracks added to Favorites" else "${trackIds.size} tracks removed from Favorites"
+    }
+
+    fun removeTracksFromLibrary(trackIds: Set<Long>) = viewModelScope.launch {
+        if (trackIds.isEmpty()) return@launch
+        _controller.value?.let { c ->
+            for (index in c.mediaItemCount - 1 downTo 0) {
+                if (c.getMediaItemAt(index).mediaId.toLongOrNull() in trackIds) {
+                    runCatching { c.removeMediaItem(index) }
+                }
+            }
+        }
+        trackIds.forEach { id -> repo.dao.track(id)?.let { repo.dao.deleteTrack(it) } }
+        _message.value = "${trackIds.size} track${if (trackIds.size == 1) "" else "s"} removed from MusicPlayer · audio files kept on device"
     }
 
     fun addTrackToPlaylist(trackId: Long, playlistId: Long) = viewModelScope.launch {
