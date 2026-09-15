@@ -43,10 +43,12 @@ jobs:
         run: python scripts/patch_ui_v0111.py
       - name: Patch v0.1.12 UI
         run: python scripts/patch_ui_v0112.py
+      - name: Patch v0.1.13 visualizer UI
+        run: python scripts/patch_ui_v0113.py
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: MusicPlayer-v0.1.12-apk
+          name: MusicPlayer-v0.1.13-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
