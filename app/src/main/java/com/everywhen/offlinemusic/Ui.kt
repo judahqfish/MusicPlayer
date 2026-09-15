@@ -2,9 +2,10 @@ package com.everywhen.offlinemusic
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,6 +16,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -152,15 +155,54 @@ fun PlaylistsScreen(vm: MainViewModel, onOpen: (PlaylistSummary) -> Unit, onSear
 
 @Composable
 fun PlaylistDetail(vm: MainViewModel, detail: DetailState, onBack: () -> Unit, onSearch: () -> Unit) {
-    val tracks by vm.repo.observePlaylistTracks(detail.id).collectAsStateWithLifecycle(initialValue = emptyList())
+    val dbTracks by vm.repo.observePlaylistTracks(detail.id).collectAsStateWithLifecycle(initialValue = emptyList())
+    var manualTracks by remember { mutableStateOf<List<TrackEntity>>(emptyList()) }
+    var sort by remember { mutableStateOf("Manual") }
+    var sortMenu by remember { mutableStateOf(false) }
     var addMenu by remember { mutableStateOf(false) }
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { if (it.isNotEmpty()) vm.importFiles(it, detail.id) }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let { u -> vm.importFolder(u, detail.id) } }
+
+    LaunchedEffect(dbTracks.map { it.id }) { manualTracks = dbTracks }
+
+    val displayed = remember(manualTracks, sort) {
+        when (sort) {
+            "A–Z" -> manualTracks.sortedBy { it.title().lowercase() }
+            "Date added" -> manualTracks.sortedByDescending { it.dateAdded }
+            "Duration" -> manualTracks.sortedBy { it.durationMs }
+            else -> manualTracks
+        }
+    }
+
+    fun moveManual(from: Int, to: Int, save: Boolean = true) {
+        if (from !in manualTracks.indices || to !in manualTracks.indices || from == to) return
+        val changed = manualTracks.toMutableList()
+        val item = changed.removeAt(from)
+        changed.add(to, item)
+        manualTracks = changed
+        sort = "Manual"
+        if (save) vm.savePlaylistOrder(detail.id, changed.map { it.id })
+    }
+
     Column {
         Header(detail.name, onSearch = onSearch, onBack = onBack)
-        Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { tracks.firstOrNull()?.let { vm.playTracks(tracks, it.id) } }, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.PlayArrow, null); Text("Play") }
-            FilledTonalButton(onClick = { tracks.firstOrNull()?.let { vm.playTracks(tracks, it.id, shuffle = true) } }, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.Shuffle, null); Text("Shuffle") }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Order: $sort", modifier = Modifier.weight(1f))
+            Box {
+                IconButton(onClick = { sortMenu = true }) { Icon(Icons.Default.Sort, "Playlist order") }
+                DropdownMenu(sortMenu, { sortMenu = false }) {
+                    listOf("Manual", "A–Z", "Date added", "Duration").forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = { sort = option; sortMenu = false }
+                        )
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { displayed.firstOrNull()?.let { vm.playTracks(displayed, it.id) } }, enabled = displayed.isNotEmpty()) { Icon(Icons.Default.PlayArrow, null); Text("Play") }
+            FilledTonalButton(onClick = { displayed.firstOrNull()?.let { vm.playTracks(displayed, it.id, shuffle = true) } }, enabled = displayed.isNotEmpty()) { Icon(Icons.Default.Shuffle, null); Text("Shuffle") }
             Box {
                 OutlinedButton(onClick = { addMenu = true }) { Icon(Icons.Default.Add, null); Text("Add") }
                 DropdownMenu(addMenu, { addMenu = false }) {
@@ -169,9 +211,170 @@ fun PlaylistDetail(vm: MainViewModel, detail: DetailState, onBack: () -> Unit, o
                 }
             }
         }
-        if (tracks.isEmpty()) EmptyState("Playlist is empty", "Add tracks from this device.")
-        else TrackList(tracks, vm, onPlay = { vm.playTracks(tracks, it.id) }, playlistId = detail.id)
+        if (sort != "Manual") {
+            Text(
+                "This is a temporary sort. Switch back to Manual to see your saved order.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
+        if (displayed.isEmpty()) {
+            EmptyState("Playlist is empty", "Add tracks from this device.")
+        } else if (sort == "Manual") {
+            PlaylistTrackList(
+                tracks = manualTracks,
+                vm = vm,
+                playlistId = detail.id,
+                onPlay = { vm.playTracks(manualTracks, it.id) },
+                onMove = { from, to -> moveManual(from, to, save = true) },
+                onDragMove = { from, to -> moveManual(from, to, save = false) },
+                onDragFinished = { vm.savePlaylistOrder(detail.id, manualTracks.map { it.id }) }
+            )
+        } else {
+            TrackList(displayed, vm, onPlay = { vm.playTracks(displayed, it.id) }, playlistId = detail.id)
+        }
     }
+}
+
+@Composable
+fun PlaylistTrackList(
+    tracks: List<TrackEntity>,
+    vm: MainViewModel,
+    playlistId: Long,
+    onPlay: (TrackEntity) -> Unit,
+    onMove: (Int, Int) -> Unit,
+    onDragMove: (Int, Int) -> Unit,
+    onDragFinished: () -> Unit
+) {
+    var selectedIds by remember(tracks.map { it.id }) { mutableStateOf<Set<Long>>(emptySet()) }
+    var playlistPicker by remember { mutableStateOf(false) }
+    var tagPicker by remember { mutableStateOf(false) }
+    val selectionMode = selectedIds.isNotEmpty()
+    val rowStepPx = with(LocalDensity.current) { 64.dp.toPx() }
+
+    Column(Modifier.fillMaxSize()) {
+        if (selectionMode) {
+            SelectionBar(
+                count = selectedIds.size,
+                onCancel = { selectedIds = emptySet() },
+                onPlaylist = { playlistPicker = true },
+                onTags = { tagPicker = true },
+                onFavorite = { vm.setFavoriteForTracks(selectedIds, true); selectedIds = emptySet() }
+            )
+        }
+        LazyColumn(Modifier.weight(1f)) {
+            items(tracks, key = { it.id }) { track ->
+                val index = tracks.indexOfFirst { it.id == track.id }
+                PlaylistTrackRow(
+                    track = track,
+                    index = index,
+                    lastIndex = tracks.lastIndex,
+                    vm = vm,
+                    playlistId = playlistId,
+                    selected = track.id in selectedIds,
+                    selectionMode = selectionMode,
+                    onPlay = onPlay,
+                    onToggleSelection = { selectedIds = if (track.id in selectedIds) selectedIds - track.id else selectedIds + track.id },
+                    onStartSelection = { selectedIds = selectedIds + track.id },
+                    onMove = onMove,
+                    onDragMove = onDragMove,
+                    onDragFinished = onDragFinished,
+                    rowStepPx = rowStepPx
+                )
+                HorizontalDivider()
+            }
+        }
+    }
+
+    if (playlistPicker) BatchPlaylistDialog(vm, selectedIds, { playlistPicker = false }) { selectedIds = emptySet(); playlistPicker = false }
+    if (tagPicker) BatchTagDialog(vm, selectedIds, { tagPicker = false }) { selectedIds = emptySet(); tagPicker = false }
+}
+
+@Composable
+private fun PlaylistTrackRow(
+    track: TrackEntity,
+    index: Int,
+    lastIndex: Int,
+    vm: MainViewModel,
+    playlistId: Long,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onPlay: (TrackEntity) -> Unit,
+    onToggleSelection: () -> Unit,
+    onStartSelection: () -> Unit,
+    onMove: (Int, Int) -> Unit,
+    onDragMove: (Int, Int) -> Unit,
+    onDragFinished: () -> Unit,
+    rowStepPx: Float
+) {
+    var menu by remember { mutableStateOf(false) }
+    var rename by remember { mutableStateOf(false) }
+    var tags by remember { mutableStateOf(false) }
+    var dragAccum by remember { mutableFloatStateOf(0f) }
+
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
+        .combinedClickable(
+            onClick = { if (selectionMode) onToggleSelection() else onPlay(track) },
+            onLongClick = onStartSelection
+        )
+        .padding(start = 8.dp)
+
+    Row(rowModifier, verticalAlignment = Alignment.CenterVertically) {
+        if (selectionMode) {
+            Checkbox(selected, onCheckedChange = { onToggleSelection() })
+        } else {
+            IconButton(onClick = { vm.toggleFavorite(track) }) {
+                Icon(if (track.favorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, "Favorite")
+            }
+        }
+        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+            Text(track.title(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(formatDuration(track.durationMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (!selectionMode) {
+            IconButton(onClick = { onMove(index, index - 1) }, enabled = index > 0) { Icon(Icons.Default.KeyboardArrowUp, "Move up") }
+            IconButton(onClick = { onMove(index, index + 1) }, enabled = index < lastIndex) { Icon(Icons.Default.KeyboardArrowDown, "Move down") }
+            Icon(
+                Icons.Default.DragHandle,
+                "Long-press and drag to reorder",
+                modifier = Modifier
+                    .size(48.dp)
+                    .padding(10.dp)
+                    .pointerInput(track.id, index, lastIndex) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { dragAccum = 0f },
+                            onDragEnd = { dragAccum = 0f; onDragFinished() },
+                            onDragCancel = { dragAccum = 0f; onDragFinished() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragAccum += dragAmount.y
+                                if (dragAccum > rowStepPx && index < lastIndex) {
+                                    onDragMove(index, index + 1)
+                                    dragAccum = 0f
+                                } else if (dragAccum < -rowStepPx && index > 0) {
+                                    onDragMove(index, index - 1)
+                                    dragAccum = 0f
+                                }
+                            }
+                        )
+                    }
+            )
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                DropdownMenu(menu, { menu = false }) {
+                    DropdownMenuItem({ Text("Rename display name") }, { menu = false; rename = true })
+                    DropdownMenuItem({ Text("Edit tags") }, { menu = false; tags = true })
+                    DropdownMenuItem({ Text("Remove from playlist") }, { menu = false; vm.removeFromPlaylist(track.id, playlistId) })
+                }
+            }
+        }
+    }
+
+    if (rename) NameDialog("Rename Track", "Display name", initial = track.displayName ?: track.title(), onDismiss = { rename = false }) { vm.renameTrack(track, it); rename = false }
+    if (tags) TagEditor(track, vm, onDismiss = { tags = false })
 }
 
 @Composable
@@ -246,6 +449,22 @@ fun SearchScreen(vm: MainViewModel, onBack: () -> Unit) {
 }
 
 @Composable
+fun SelectionBar(count: Int, onCancel: () -> Unit, onPlaylist: () -> Unit, onTags: () -> Unit, onFavorite: () -> Unit) {
+    Surface(tonalElevation = 2.dp) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onCancel) { Icon(Icons.Default.Close, "Cancel selection") }
+            Text("$count selected", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            IconButton(onClick = onPlaylist) { Icon(Icons.Default.PlaylistAdd, "Add to playlist") }
+            IconButton(onClick = onTags) { Icon(Icons.Default.Label, "Add tags") }
+            IconButton(onClick = onFavorite) { Icon(Icons.Default.Favorite, "Favorite selected") }
+        }
+    }
+}
+
+@Composable
 fun TrackList(tracks: List<TrackEntity>, vm: MainViewModel, onPlay: (TrackEntity) -> Unit, playlistId: Long? = null) {
     var selectedIds by remember(tracks) { mutableStateOf<Set<Long>>(emptySet()) }
     var playlistPicker by remember { mutableStateOf(false) }
@@ -254,21 +473,13 @@ fun TrackList(tracks: List<TrackEntity>, vm: MainViewModel, onPlay: (TrackEntity
 
     Column(Modifier.fillMaxSize()) {
         if (selectionMode) {
-            Surface(tonalElevation = 2.dp) {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { selectedIds = emptySet() }) { Icon(Icons.Default.Close, "Cancel selection") }
-                    Text("${selectedIds.size} selected", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                    IconButton(onClick = { playlistPicker = true }) { Icon(Icons.Default.PlaylistAdd, "Add to playlist") }
-                    IconButton(onClick = { tagPicker = true }) { Icon(Icons.Default.Label, "Add tags") }
-                    IconButton(onClick = {
-                        vm.setFavoriteForTracks(selectedIds, true)
-                        selectedIds = emptySet()
-                    }) { Icon(Icons.Default.Favorite, "Favorite selected") }
-                }
-            }
+            SelectionBar(
+                count = selectedIds.size,
+                onCancel = { selectedIds = emptySet() },
+                onPlaylist = { playlistPicker = true },
+                onTags = { tagPicker = true },
+                onFavorite = { vm.setFavoriteForTracks(selectedIds, true); selectedIds = emptySet() }
+            )
         }
         LazyColumn(Modifier.weight(1f)) {
             items(tracks, key = { it.id }) { track ->
@@ -279,9 +490,7 @@ fun TrackList(tracks: List<TrackEntity>, vm: MainViewModel, onPlay: (TrackEntity
                     playlistId = playlistId,
                     selected = track.id in selectedIds,
                     selectionMode = selectionMode,
-                    onToggleSelection = {
-                        selectedIds = if (track.id in selectedIds) selectedIds - track.id else selectedIds + track.id
-                    },
+                    onToggleSelection = { selectedIds = if (track.id in selectedIds) selectedIds - track.id else selectedIds + track.id },
                     onStartSelection = { selectedIds = selectedIds + track.id }
                 )
                 HorizontalDivider()
@@ -289,18 +498,8 @@ fun TrackList(tracks: List<TrackEntity>, vm: MainViewModel, onPlay: (TrackEntity
         }
     }
 
-    if (playlistPicker) BatchPlaylistDialog(
-        vm = vm,
-        selectedIds = selectedIds,
-        onDismiss = { playlistPicker = false },
-        onDone = { selectedIds = emptySet(); playlistPicker = false }
-    )
-    if (tagPicker) BatchTagDialog(
-        vm = vm,
-        selectedIds = selectedIds,
-        onDismiss = { tagPicker = false },
-        onDone = { selectedIds = emptySet(); tagPicker = false }
-    )
+    if (playlistPicker) BatchPlaylistDialog(vm, selectedIds, { playlistPicker = false }) { selectedIds = emptySet(); playlistPicker = false }
+    if (tagPicker) BatchTagDialog(vm, selectedIds, { tagPicker = false }) { selectedIds = emptySet(); tagPicker = false }
 }
 
 @Composable
@@ -344,9 +543,7 @@ fun TrackRow(
                 DropdownMenu(menu, { menu = false }) {
                     DropdownMenuItem({ Text("Rename display name") }, { menu = false; rename = true })
                     DropdownMenuItem({ Text("Edit tags") }, { menu = false; tags = true })
-                    playlistId?.let { pid ->
-                        DropdownMenuItem({ Text("Remove from playlist") }, { menu = false; vm.removeFromPlaylist(track.id, pid) })
-                    }
+                    playlistId?.let { pid -> DropdownMenuItem({ Text("Remove from playlist") }, { menu = false; vm.removeFromPlaylist(track.id, pid) }) }
                 }
             }
         }
@@ -370,10 +567,7 @@ fun BatchPlaylistDialog(vm: MainViewModel, selectedIds: Set<Long>, onDismiss: ()
                         headlineContent = { Text(playlist.name) },
                         supportingContent = { Text("${playlist.count} tracks") },
                         leadingContent = { Icon(Icons.Default.QueueMusic, null) },
-                        modifier = Modifier.clickable {
-                            vm.addTracksToPlaylist(selectedIds, playlist.id)
-                            onDone()
-                        }
+                        modifier = Modifier.clickable { vm.addTracksToPlaylist(selectedIds, playlist.id); onDone() }
                     )
                 }
                 TextButton(onClick = { createNew = true }) { Icon(Icons.Default.Add, null); Text(" New playlist") }
@@ -383,9 +577,7 @@ fun BatchPlaylistDialog(vm: MainViewModel, selectedIds: Set<Long>, onDismiss: ()
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
     if (createNew) NameDialog("New Playlist", "Playlist name", onDismiss = { createNew = false }) { name ->
-        vm.createPlaylist(name) { playlistId ->
-            vm.addTracksToPlaylist(selectedIds, playlistId)
-        }
+        vm.createPlaylist(name) { playlistId -> vm.addTracksToPlaylist(selectedIds, playlistId) }
         createNew = false
         onDone()
     }
@@ -404,32 +596,21 @@ fun BatchTagDialog(vm: MainViewModel, selectedIds: Set<Long>, onDismiss: () -> U
                 if (tags.isEmpty()) Text("No tags yet.")
                 tags.forEach { tag ->
                     Row(
-                        Modifier.fillMaxWidth().clickable {
-                            chosen = if (tag.id in chosen) chosen - tag.id else chosen + tag.id
-                        },
+                        Modifier.fillMaxWidth().clickable { chosen = if (tag.id in chosen) chosen - tag.id else chosen + tag.id },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Checkbox(tag.id in chosen, onCheckedChange = { checked ->
-                            chosen = if (checked) chosen + tag.id else chosen - tag.id
-                        })
+                        Checkbox(tag.id in chosen, onCheckedChange = { checked -> chosen = if (checked) chosen + tag.id else chosen - tag.id })
                         Text(tag.name)
                     }
                 }
                 TextButton(onClick = { createNew = true }) { Icon(Icons.Default.Add, null); Text(" New tag") }
             }
         },
-        confirmButton = {
-            TextButton(
-                enabled = chosen.isNotEmpty(),
-                onClick = { vm.addTagsToTracks(selectedIds, chosen); onDone() }
-            ) { Text("Add") }
-        },
+        confirmButton = { TextButton(enabled = chosen.isNotEmpty(), onClick = { vm.addTagsToTracks(selectedIds, chosen); onDone() }) { Text("Add") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
     if (createNew) NameDialog("New Tag", "Tag name", onDismiss = { createNew = false }) { name ->
-        vm.createTag(name) { tagId ->
-            vm.addTagsToTracks(selectedIds, setOf(tagId))
-        }
+        vm.createTag(name) { tagId -> vm.addTagsToTracks(selectedIds, setOf(tagId)) }
         createNew = false
         onDone()
     }
@@ -478,9 +659,7 @@ fun MiniPlayer(vm: MainViewModel, onOpen: () -> Unit) {
         }
     }
     Surface(tonalElevation = 4.dp) {
-        Column(
-            Modifier.fillMaxWidth().clickable(enabled = hasTrack, onClick = onOpen).padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
+        Column(Modifier.fillMaxWidth().clickable(enabled = hasTrack, onClick = onOpen).padding(horizontal = 8.dp, vertical = 4.dp)) {
             Text(
                 if (hasTrack) title.ifBlank { "Current track" } else "Playback controls",
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
@@ -491,9 +670,7 @@ fun MiniPlayer(vm: MainViewModel, onOpen: () -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = vm::previous, enabled = hasTrack) { Icon(Icons.Default.SkipPrevious, "Previous track") }
                 IconButton(onClick = vm::seekBack, enabled = hasTrack) { Icon(Icons.Default.Replay10, "Back 10 seconds") }
-                FilledIconButton(onClick = vm::playPause, enabled = hasTrack) {
-                    Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause")
-                }
+                FilledIconButton(onClick = vm::playPause, enabled = hasTrack) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause") }
                 IconButton(onClick = vm::seekForward, enabled = hasTrack) { Icon(Icons.Default.Forward10, "Forward 10 seconds") }
                 IconButton(onClick = vm::next, enabled = hasTrack) { Icon(Icons.Default.SkipNext, "Next track") }
             }
@@ -505,6 +682,7 @@ fun MiniPlayer(vm: MainViewModel, onOpen: () -> Unit) {
 fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit) {
     val controller by vm.controller.collectAsStateWithLifecycle()
     val speed by vm.speed.collectAsStateWithLifecycle()
+    val amplifierDb by vm.amplifierDb.collectAsStateWithLifecycle()
     var playing by remember { mutableStateOf(false) }
     var title by remember { mutableStateOf("") }
     var pos by remember { mutableLongStateOf(0L) }
@@ -522,13 +700,13 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit) {
     }
     Column(Modifier.fillMaxSize()) {
         Header("Now Playing", onBack = onBack, actions = { IconButton(onClick = { showQueue = true }) { Icon(Icons.Default.QueueMusic, "Queue") } })
-        Spacer(Modifier.height(24.dp))
-        Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(160.dp).align(Alignment.CenterHorizontally))
-        Text(title.ifBlank { "No track" }, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(24.dp).align(Alignment.CenterHorizontally), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(16.dp))
+        Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(120.dp).align(Alignment.CenterHorizontally))
+        Text(title.ifBlank { "No track" }, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp).align(Alignment.CenterHorizontally), maxLines = 2, overflow = TextOverflow.Ellipsis)
         Slider(value = if (dur > 0) pos.toFloat().coerceIn(0f, dur.toFloat()) else 0f, onValueChange = { controller?.seekTo(it.toLong()) }, valueRange = 0f..maxOf(1f, dur.toFloat()), modifier = Modifier.padding(horizontal = 24.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(formatDuration(pos)); Text(formatDuration(dur)) }
         Box(Modifier.align(Alignment.CenterHorizontally)) {
-            TextButton(onClick = { speedMenu = true }) { Text("${speed}×") }
+            TextButton(onClick = { speedMenu = true }) { Text("Speed ${speed}×") }
             DropdownMenu(speedMenu, { speedMenu = false }) {
                 listOf(.5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { s -> DropdownMenuItem({ Text("${s}×") }, { vm.setSpeed(s); speedMenu = false }) }
             }
@@ -546,6 +724,27 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit) {
                 val next = when (controller?.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }
                 vm.setRepeatMode(next)
             }) { Icon(Icons.Default.Repeat, "Repeat") }
+        }
+        Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.VolumeUp, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Volume amplifier", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    Text(if (amplifierDb < 0.1f) "Off" else "+${"%.1f".format(amplifierDb)} dB")
+                }
+                Slider(
+                    value = amplifierDb,
+                    onValueChange = vm::setAmplifierDb,
+                    valueRange = 0f..12f,
+                    steps = 11
+                )
+                Text(
+                    "Boosts audio above normal playback. Higher settings can distort loud recordings.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
     if (showQueue) QueueDialog(vm, onDismiss = { showQueue = false })
