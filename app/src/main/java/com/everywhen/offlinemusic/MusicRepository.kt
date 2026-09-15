@@ -22,11 +22,24 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
                 takePermission(uri)
                 val existing = dao.trackByUri(uri.toString())
                 val trackId = if (existing != null) {
+                    if (!existing.metadataScanned) {
+                        val meta = readMetadata(uri)
+                        dao.updateMetadata(existing.id, meta.artist, meta.album, meta.durationMs)
+                    }
                     skipped++
                     existing.id
                 } else {
                     val meta = readMetadata(uri)
-                    val id = dao.insertTrack(TrackEntity(uri = uri.toString(), fileName = meta.first, durationMs = meta.second))
+                    val id = dao.insertTrack(
+                        TrackEntity(
+                            uri = uri.toString(),
+                            fileName = meta.fileName,
+                            durationMs = meta.durationMs,
+                            artist = meta.artist,
+                            album = meta.album,
+                            metadataScanned = true
+                        )
+                    )
                     if (id > 0) added++
                     id
                 }
@@ -52,6 +65,18 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
         importUris(audio, playlistId)
     }
 
+    suspend fun refreshMissingMetadata() = withContext(Dispatchers.IO) {
+        dao.tracksNeedingMetadata().forEach { track ->
+            runCatching {
+                val meta = readMetadata(Uri.parse(track.uri))
+                dao.updateMetadata(track.id, meta.artist, meta.album, meta.durationMs)
+            }.onFailure {
+                // Mark as scanned so an unreadable/untagged file is not re-opened every launch.
+                runCatching { dao.updateMetadata(track.id, null, null, track.durationMs) }
+            }
+        }
+    }
+
     private fun isAudioName(name: String?): Boolean {
         val ext = name?.substringAfterLast('.', "")?.lowercase() ?: return false
         return ext in setOf("mp3", "m4a", "aac", "wav", "flac", "ogg", "opus")
@@ -66,15 +91,19 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
         }
     }
 
-    private fun readMetadata(uri: Uri): Pair<String, Long> {
+    private fun readMetadata(uri: Uri): LocalMetadata {
         val name = DocumentFile.fromSingleUri(context, uri)?.name ?: "Audio"
         val mmr = MediaMetadataRetriever()
         return try {
             mmr.setDataSource(context, uri)
             val duration = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            name to duration
+            val artist = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                ?.trim()?.takeIf { it.isNotBlank() }
+            val album = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                ?.trim()?.takeIf { it.isNotBlank() }
+            LocalMetadata(name, duration, artist, album)
         } catch (_: Exception) {
-            name to 0L
+            LocalMetadata(name, 0L, null, null)
         } finally {
             runCatching { mmr.release() }
         }
@@ -85,7 +114,7 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
 
     suspend fun createPlaylistFromTag(tagId: Long, name: String): Long {
         val id = createPlaylist(name)
-        observeTagTracks(tagId) // keeps API explicit; actual snapshot below
+        observeTagTracks(tagId)
         return id
     }
 
@@ -95,3 +124,4 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
 }
 
 data class ImportResult(val added: Int, val skipped: Int)
+private data class LocalMetadata(val fileName: String, val durationMs: Long, val artist: String?, val album: String?)
