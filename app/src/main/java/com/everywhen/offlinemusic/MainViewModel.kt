@@ -38,6 +38,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         connectController()
+        viewModelScope.launch { repo.refreshMissingMetadata() }
         viewModelScope.launch {
             speed.drop(1).collect { _controller.value?.setPlaybackSpeed(it) }
         }
@@ -154,10 +155,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         val start = available.indexOfFirst { it.id == startTrackId }.let { if (it >= 0) it else 0 }
         val items = available.map { track ->
+            val metadata = MediaMetadata.Builder().setTitle(track.title())
+            track.artist?.takeIf { it.isNotBlank() }?.let(metadata::setArtist)
+            track.album?.takeIf { it.isNotBlank() }?.let(metadata::setAlbumTitle)
             MediaItem.Builder()
                 .setMediaId(track.id.toString())
                 .setUri(track.uri)
-                .setMediaMetadata(MediaMetadata.Builder().setTitle(track.title()).build())
+                .setMediaMetadata(metadata.build())
                 .build()
         }
         runCatching {
