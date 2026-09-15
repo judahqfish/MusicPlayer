@@ -26,6 +26,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val tags = repo.tags.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val favorites = repo.favorites.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val speed = prefs.speed.stateIn(viewModelScope, SharingStarted.Eagerly, 1f)
+    val amplifierDb = prefs.amplifierDb.stateIn(viewModelScope, SharingStarted.Eagerly, 0f)
 
     private val _controller = MutableStateFlow<MediaController?>(null)
     val controller: StateFlow<MediaController?> = _controller
@@ -115,7 +116,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _message.value = "${trackIds.size} tracks added to playlist"
     }
 
-    fun removeFromPlaylist(trackId: Long, playlistId: Long) = viewModelScope.launch { repo.dao.removeFromPlaylist(playlistId, trackId) }
+    fun savePlaylistOrder(playlistId: Long, orderedTrackIds: List<Long>) = viewModelScope.launch {
+        orderedTrackIds.forEachIndexed { index, trackId ->
+            repo.dao.setPlaylistOrder(playlistId, trackId, index)
+        }
+    }
+
+    fun removeFromPlaylist(trackId: Long, playlistId: Long) = viewModelScope.launch {
+        repo.dao.removeFromPlaylist(playlistId, trackId)
+    }
 
     fun setTag(trackId: Long, tagId: Long, selected: Boolean) = viewModelScope.launch {
         if (selected) repo.dao.addTrackTag(TrackTagCrossRef(trackId, tagId)) else repo.dao.removeTrackTag(trackId, tagId)
@@ -129,6 +138,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setSpeed(value: Float) = viewModelScope.launch { prefs.setSpeed(value) }
+    fun setAmplifierDb(value: Float) = viewModelScope.launch { prefs.setAmplifierDb(value) }
 
     fun playTracks(queue: List<TrackEntity>, startTrackId: Long, shuffle: Boolean = false) {
         val c = _controller.value
