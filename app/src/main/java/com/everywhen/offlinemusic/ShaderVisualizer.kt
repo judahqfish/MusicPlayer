@@ -72,7 +72,7 @@ fun ShaderVisualizerSurface(
 
     val shaderCode = remember(style) { shaderFor(style) }
     val shader = remember(shaderCode) { runCatching { RuntimeShader(shaderCode) }.getOrNull() }
-    val renderEffect = remember(shader) {
+    val shaderEffect = remember(shader) {
         shader?.let { RenderEffect.createRuntimeShaderEffect(it, INPUT_SHADER).asComposeRenderEffect() }
     }
 
@@ -108,7 +108,7 @@ fun ShaderVisualizerSurface(
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { renderEffect = renderEffect }
+                .graphicsLayer { renderEffect = shaderEffect }
         ) {
             VisualizerSourceTexture(
                 style = style,
