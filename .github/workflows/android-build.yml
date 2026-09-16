@@ -63,6 +63,8 @@ jobs:
         run: python scripts/patch_v0122.py
       - name: Patch v0.1.23 clipped mirrored wedge and touch interaction
         run: python scripts/patch_v0123.py
+      - name: Fix v0.1.23 Compose imports
+        run: python scripts/patch_v0123_fix.py
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
