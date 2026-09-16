@@ -73,10 +73,12 @@ jobs:
         run: python scripts/patch_v0124.py
       - name: Patch v0.1.25 hypnotic visualizer redesign
         run: python scripts/patch_v0125.py
+      - name: Patch v0.1.28 shader visualizer routing
+        run: python scripts/patch_v0128.py
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: MusicPlayer-v0.1.25-apk
+          name: MusicPlayer-v0.1.28-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
