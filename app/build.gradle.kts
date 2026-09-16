@@ -12,8 +12,8 @@ android {
         applicationId = "com.everywhen.offlinemusic"
         minSdk = 26
         targetSdk = 37
-        versionCode = 26
-        versionName = "0.1.25"
+        versionCode = 29
+        versionName = "0.1.28"
     }
 
     buildFeatures { compose = true }
