@@ -80,7 +80,6 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
         importUris(audio, playlistId)
     }
 
-    /** Existing SAF/cloud tracks are copied into app-private storage and then verified. */
     suspend fun migrateExistingTracksToOfflineCopies(): Int = withContext(Dispatchers.IO) {
         var migrated = 0
         dao.allTracks().forEach { track ->
@@ -106,10 +105,6 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
         migrated
     }
 
-    /**
-     * Always resolves the newest database row before playback. This prevents a stale
-     * Drive/content URI from being queued while the background migration is replacing it.
-     */
     suspend fun prepareTracksForPlayback(input: List<TrackEntity>): PlaybackPreparation = withContext(Dispatchers.IO) {
         val prepared = mutableListOf<TrackEntity>()
         val failed = mutableSetOf<Long>()
@@ -153,7 +148,7 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
         PlaybackPreparation(prepared, failed)
     }
 
-    private fun repairTrack(track: TrackEntity): TrackEntity {
+    private suspend fun repairTrack(track: TrackEntity): TrackEntity {
         var uri = Uri.parse(track.uri)
         if (isManagedCopy(uri)) uri = repairManagedCopyUri(uri)
 
@@ -188,12 +183,12 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
     suspend fun refreshMissingMetadata() = withContext(Dispatchers.IO) {
         dao.tracksNeedingMetadata().forEach { track ->
             runCatching {
-                val repaired = if (isManagedCopy(Uri.parse(track.uri))) repairTrack(track) else {
+                if (isManagedCopy(Uri.parse(track.uri))) {
+                    repairTrack(track)
+                } else {
                     val meta = readMetadata(Uri.parse(track.uri), track.fileName)
                     dao.updateMetadata(track.id, meta.artist ?: track.artist, meta.album ?: track.album, meta.durationMs.takeIf { it > 0 } ?: track.durationMs)
-                    track
                 }
-                repaired
             }.onFailure {
                 runCatching { dao.updateMetadata(track.id, track.artist, track.album, track.durationMs) }
             }
@@ -245,7 +240,6 @@ class MusicRepository(private val context: Context, val dao: MusicDao) {
         }
     }
 
-    /** Older v0.1.15 copies could have no extension; infer the container and rename them. */
     private fun repairManagedCopyUri(uri: Uri): Uri {
         if (!isManagedCopy(uri)) return uri
         val file = File(uri.path ?: return uri)
