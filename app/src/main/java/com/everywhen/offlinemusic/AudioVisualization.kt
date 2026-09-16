@@ -43,6 +43,8 @@ class VisualizationAudioSink : TeeAudioProcessor.AudioBufferSink {
     private var smoothedEnergy = 0f
     private var recentPeak = 0.08f
     private var lastBeatEnergy = 0f
+    private var beatEnvelope = 0f
+    private val smoothedWaveform = FloatArray(48)
 
     override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
         this.encoding = encoding
@@ -50,6 +52,8 @@ class VisualizationAudioSink : TeeAudioProcessor.AudioBufferSink {
         smoothedEnergy = 0f
         recentPeak = 0.08f
         lastBeatEnergy = 0f
+        beatEnvelope = 0f
+        smoothedWaveform.fill(0f)
         AudioVisualizationBus.clear()
     }
 
@@ -67,7 +71,7 @@ class VisualizationAudioSink : TeeAudioProcessor.AudioBufferSink {
         if (samples.isEmpty()) return
 
         val bins = 48
-        val waveform = MutableList(bins) { 0f }
+        val rawWaveform = FloatArray(bins)
         val perBin = max(1, samples.size / bins)
         var sumSquares = 0.0
 
@@ -75,19 +79,27 @@ class VisualizationAudioSink : TeeAudioProcessor.AudioBufferSink {
             val v = value.coerceIn(-1f, 1f)
             sumSquares += (v * v).toDouble()
             val bin = (index / perBin).coerceAtMost(bins - 1)
-            if (abs(v) > abs(waveform[bin])) waveform[bin] = v
+            if (abs(v) > abs(rawWaveform[bin])) rawWaveform[bin] = v
+        }
+
+        // Low-pass the waveform so adjacent PCM buffers blend rather than jump.
+        for (i in 0 until bins) {
+            smoothedWaveform[i] = smoothedWaveform[i] * 0.62f + rawWaveform[i] * 0.38f
         }
 
         val rms = sqrt(sumSquares / samples.size).toFloat().coerceIn(0f, 1f)
-        smoothedEnergy = smoothedEnergy * 0.78f + rms * 0.22f
-        recentPeak = max(smoothedEnergy, recentPeak * 0.975f).coerceAtLeast(0.035f)
+        smoothedEnergy = smoothedEnergy * 0.82f + rms * 0.18f
+        recentPeak = max(smoothedEnergy, recentPeak * 0.982f).coerceAtLeast(0.035f)
 
-        val normalizedEnergy = (smoothedEnergy / (recentPeak * 1.15f)).coerceIn(0f, 1f)
-        val onset = (normalizedEnergy - lastBeatEnergy * 0.88f).coerceAtLeast(0f)
-        val beat = ((onset - 0.06f) * 5.5f).coerceIn(0f, 1f)
-        lastBeatEnergy = normalizedEnergy
+        val normalizedEnergy = (smoothedEnergy / (recentPeak * 1.12f)).coerceIn(0f, 1f)
+        val onset = (normalizedEnergy - lastBeatEnergy * 0.90f).coerceAtLeast(0f)
+        val detectedBeat = ((onset - 0.045f) * 6.5f).coerceIn(0f, 1f)
 
-        AudioVisualizationBus.publish(waveform, normalizedEnergy, beat)
+        // Hold a musical transient for a few frames, then let it fall away smoothly.
+        beatEnvelope = max(detectedBeat, beatEnvelope * 0.82f)
+        lastBeatEnergy = lastBeatEnergy * 0.45f + normalizedEnergy * 0.55f
+
+        AudioVisualizationBus.publish(smoothedWaveform.toList(), normalizedEnergy, beatEnvelope)
     }
 
     private fun read16BitSamples(buffer: ByteBuffer): FloatArray {
