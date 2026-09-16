@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.collectLatest
 class PlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private lateinit var session: MediaSession
-    // ExoPlayer must only be touched from its application thread (main).
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val dao by lazy { (application as MusicApplication).database.musicDao() }
     private val prefs by lazy { PlayerPreferences(this) }
@@ -68,15 +67,18 @@ class PlaybackService : MediaSessionService() {
                 }
                 lastTrackId = mediaItem?.mediaId?.toLongOrNull()
                 lastPositionSnapshot = player.currentPosition.coerceAtLeast(0)
+                persistCurrentDurationIfKnown()
                 updateAmplifier()
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isPlaying) saveCurrentPosition()
+                if (isPlaying) persistCurrentDurationIfKnown()
                 updateAmplifier()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) persistCurrentDurationIfKnown()
                 if (playbackState == Player.STATE_ENDED) {
                     lastTrackId?.let { persistPosition(it, 0L) }
                 }
@@ -97,6 +99,7 @@ class PlaybackService : MediaSessionService() {
             while (isActive) {
                 delay(1000)
                 updateAmplifier()
+                persistCurrentDurationIfKnown()
             }
         }
 
@@ -109,6 +112,14 @@ class PlaybackService : MediaSessionService() {
                 }
             }
         }
+    }
+
+    private fun persistCurrentDurationIfKnown() {
+        if (!::player.isInitialized) return
+        val id = player.currentMediaItem?.mediaId?.toLongOrNull() ?: return
+        val duration = player.duration
+        if (duration <= 0L || duration == C.TIME_UNSET) return
+        scope.launch(Dispatchers.IO) { runCatching { dao.updateDuration(id, duration) } }
     }
 
     private fun updateAmplifier() {
