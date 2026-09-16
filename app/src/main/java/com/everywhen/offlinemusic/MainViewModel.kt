@@ -38,7 +38,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         connectController()
-        viewModelScope.launch { repo.refreshMissingMetadata() }
+        viewModelScope.launch {
+            val migrated = repo.migrateExistingTracksToOfflineCopies()
+            repo.refreshMissingMetadata()
+            if (migrated > 0) {
+                _message.value = "$migrated existing track${if (migrated == 1) "" else "s"} saved for offline playback"
+            }
+        }
         viewModelScope.launch {
             speed.drop(1).collect { _controller.value?.setPlaybackSpeed(it) }
         }
@@ -77,14 +83,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
     }
 
+    private fun importMessage(r: ImportResult): String = buildString {
+        append("${r.added} added for offline playback")
+        if (r.skipped > 0) append(" · ${r.skipped} already present")
+        if (r.failed > 0) append(" · ${r.failed} could not be copied")
+    }
+
     fun importFiles(uris: List<Uri>, playlistId: Long? = null) = viewModelScope.launch {
-        val r = repo.importUris(uris, playlistId)
-        _message.value = "${r.added} added${if (r.skipped > 0) " · ${r.skipped} already present" else ""}"
+        _message.value = importMessage(repo.importUris(uris, playlistId))
     }
 
     fun importFolder(uri: Uri, playlistId: Long? = null) = viewModelScope.launch {
-        val r = repo.importFolder(uri, playlistId)
-        _message.value = "${r.added} added${if (r.skipped > 0) " · ${r.skipped} already present" else ""}"
+        _message.value = importMessage(repo.importFolder(uri, playlistId))
     }
 
     fun clearMessage() { _message.value = null }
@@ -138,8 +148,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
-        trackIds.forEach { id -> repo.dao.track(id)?.let { repo.dao.deleteTrack(it) } }
-        _message.value = "${trackIds.size} track${if (trackIds.size == 1) "" else "s"} removed from MusicPlayer · audio files kept on device"
+        repo.removeTracksFromLibrary(trackIds)
+        _message.value = "${trackIds.size} track${if (trackIds.size == 1) "" else "s"} removed from MusicPlayer · original source files kept"
     }
 
     fun addTrackToPlaylist(trackId: Long, playlistId: Long) = viewModelScope.launch {
