@@ -85,12 +85,20 @@ jobs:
         run: python scripts/patch_v0131.py
       - name: Build current debug APK
         run: gradle :app:assembleDebug --no-daemon
+      - name: Download exact historical v0.1.30 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: MusicPlayer-v0.1.30-apk
+          path: /tmp/historical-v0130
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: judahqfish/MusicPlayer
+          run-id: 35154221340
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Runtime and upgrade-install tests
+      - name: Runtime and exact historical upgrade-install tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -100,13 +108,16 @@ jobs:
             set -eux
             gradle :app:connectedDebugAndroidTest --no-daemon
             adb uninstall com.everywhen.offlinemusic || true
-            git worktree add /tmp/musicplayer-v0130 a52aa64b0e002aca452ea82c2220aba5c60ad739
-            gradle -p /tmp/musicplayer-v0130 :app:assembleDebug --no-daemon
-            adb install /tmp/musicplayer-v0130/app/build/outputs/apk/debug/app-debug.apk
+            echo 'Historical artifact contents:'
+            find /tmp/historical-v0130 -maxdepth 2 -type f -ls
+            OLD_APK=$(find /tmp/historical-v0130 -type f -name '*.apk' | head -1)
+            test -n "$OLD_APK"
+            adb install "$OLD_APK"
+            adb shell dumpsys package com.everywhen.offlinemusic | grep -E 'versionCode=|versionName='
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell dumpsys package com.everywhen.offlinemusic | grep -E 'versionCode=|versionName='
       - uses: actions/upload-artifact@v4
         with:
-          name: MusicPlayer-v0.1.32-apk
+          name: MusicPlayer-v0.1.33-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
