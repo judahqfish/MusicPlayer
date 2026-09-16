@@ -167,9 +167,6 @@ interface MusicDao {
     @Update suspend fun updateTag(tag: TagEntity)
     @Delete suspend fun deleteTag(tag: TagEntity)
 
-    @Query("SELECT tracks.* FROM tracks INNER JOIN track_tags ON tracks.id = track_tags.tagId WHERE track_tags.tagId = :tagId ORDER BY tracks.fileName COLLATE NOCASE")
-    fun observeTagTracksBroken(tagId: Long): Flow<List<TrackEntity>>
-
     @Query("SELECT tracks.* FROM tracks INNER JOIN track_tags ON tracks.id = track_tags.trackId WHERE track_tags.tagId = :tagId ORDER BY tracks.fileName COLLATE NOCASE")
     fun observeTagTracks(tagId: Long): Flow<List<TrackEntity>>
 
