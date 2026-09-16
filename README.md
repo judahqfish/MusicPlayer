@@ -1,37 +1,107 @@
-# Offline Music Player v0.1.0
+# Offline Music Player
 
-Android-only, local-file music player. Designed to operate with **no Internet permission**.
+Current development version: **v0.1.20**.
 
-## Included in this first coding build
+Android music player focused on reliable local/offline playback, simple library management, playlists, and music-reactive visuals.
 
-- All Tracks library
-- Multi-file import through Android's document picker
-- Folder import through Storage Access Framework
-- Multiple playlists
-- User-created tags and tag editing
-- Favorites
-- Filename-first track naming and in-app display-name rename
-- Search across track names
-- Media3 / ExoPlayer playback
-- Background playback through MediaSessionService
-- Screen-off / lock-screen / Bluetooth media controls through MediaSession
-- Previous / Play-Pause / Next / Seek
-- Global speed presets 0.5x–2.0x
-- Shuffle and repeat controls
-- Per-track saved playback position
-- Playlist-specific membership/order data model
-- Local Room database
-- 1-day GitHub Actions APK artifact retention
+## What the app does
 
-## Explicitly offline
+- Imports audio files and folders through Android's Storage Access Framework.
+- Keeps imported music available for offline playback.
+- Supports playlists, tags, favorites, search, queue management, shuffle, repeat, speed control, and per-track playback position.
+- Uses Media3 / ExoPlayer with background playback and MediaSession controls.
+- Provides a volume amplifier up to +12 dB, with distortion warning at higher boost levels.
+- Includes an audio visualizer with waveform and Colorscape modes.
 
-`AndroidManifest.xml` intentionally does **not** declare `android.permission.INTERNET`.
+## Current feature set
 
-No analytics, cloud sync, streaming, ads, telemetry, online artwork, or remote metadata lookup are included.
+### Library and organization
+
+- All Tracks library.
+- Multi-file and folder import.
+- Multiple playlists.
+- Manual playlist ordering with drag/reorder controls.
+- Temporary alternate sorts without destroying the saved manual order.
+- User-created tags and tag editing.
+- Favorites.
+- Multi-select batch actions for playlists, tags, and favorites.
+- Search across track names.
+- Filename-first naming with in-app display-name rename.
+
+### Playback
+
+- Previous / Play-Pause / Next.
+- Back/forward 10 seconds.
+- Queue screen and temporary queue reordering.
+- Shuffle and repeat.
+- Global speed presets from 0.5x to 2.0x.
+- Volume amplifier from 0 to +12 dB.
+- Background playback and lock-screen/Bluetooth media controls.
+- Per-track saved playback position.
+- Local/offline playback for imported tracks, including materialized local copies when required for cloud/document-provider sources.
+
+### Visualizer
+
+The visualizer uses real playback audio data rather than decorative animation alone. It tracks:
+
+- waveform
+- overall energy
+- beat/onset strength
+- bass
+- mids
+- treble
+
+Available styles include Radial, Kaleidoscope, Blob, Drops, and Nebula.
+
+As of **v0.1.20**:
+
+- Colorscape reacts more strongly to the music.
+- Strong bass/drum hits create visible pulse/expansion effects.
+- Mids influence movement/shape and treble adds faster detail.
+- Kaleidoscope uses shifting mirrored geometric facets rather than simply a radial spoke pattern.
+- Waveform contrast adapts to the visual background; dark scenes use a light/white waveform so it remains visible.
+- Visual animation uses a continuous frame clock so scenes do not visibly restart every few seconds.
+
+## Recent changes
+
+### v0.1.20
+
+- Stronger beat-responsive Colorscape behavior.
+- Reworked geometric Kaleidoscope.
+- Adaptive high-contrast waveform rendering.
+
+### v0.1.19
+
+- Faster startup for already-imported local tracks.
+- Continuous visualizer animation timing.
+
+### v0.1.18
+
+- Expanded visualizer scenes and frequency-linked color behavior.
+
+## Known issues / work still in progress
+
+- Continue tuning visualizer sensitivity across quiet, compressed, and bass-heavy recordings.
+- Verify that every document-provider/Google Drive import receives a durable offline copy before its original provider becomes unavailable.
+- Improve artist/album metadata display and album-aware sorting/grouping.
+- Continue polishing queue and playlist interaction.
+- Embedded artwork is not yet a complete library/Now Playing experience.
+
+## Development rules / do not regress
+
+- **Offline playback is a core requirement.** A track successfully added to the library should remain playable without network access.
+- Manual playlist order must remain recoverable after viewing an alphabetical/date/duration sort.
+- Sorting by track name should eventually account for album grouping so multiple albums with tracks such as `01`, `02`, etc. do not become intermixed.
+- Favorites remain a first-class library view.
+- Playback controls must always remain available: previous, seek back, play/pause, seek forward, and next.
+- Visual effects should respond to the actual music. Do not replace audio reactivity with generic looping animation.
+- A Kaleidoscope style means evolving mirrored/geometric patterns, not merely a radial pattern.
+- Waveform rendering must maintain adequate contrast against the current background.
+- Preserve the selected launcher icon and keep the app version visible where established in the UI.
 
 ## Build
 
-This repository targets:
+This repository currently targets:
 
 - Android Gradle Plugin 9.4.0
 - Gradle 9.6.0
@@ -47,23 +117,14 @@ From a machine with Android SDK 37 installed:
 gradle :app:assembleDebug
 ```
 
-Or push to GitHub and run the included **Android Debug APK** workflow. The APK artifact is retained for one day.
+Or push to GitHub and run the included **Android Debug APK** workflow.
 
-## v0.1.0 limitations / next coding pass
+The workflow applies the cumulative UI/behavior patches, builds the debug APK, and uploads a versioned APK artifact. Artifact retention is intentionally **1 day** to reduce GitHub Actions storage use.
 
-The architecture is in place, but these UX pieces should be completed before calling it 1.0:
+## Next priorities
 
-- Drag reordering UI for playlist tracks and queue (database schema already supports ordered playlists)
-- Full queue screen and temporary queue reordering
-- Add-existing-library-tracks picker inside a playlist
-- Playlist rename/delete/clear confirmation UI
-- Tag rename/delete and "Create playlist from tag"
-- Multi-select batch actions
-- Locate File/relink UI
-- Embedded artwork display (playback supports local media; UI currently uses placeholder icon)
-- Search playlist/tag names in addition to tracks
-- Persist/restore last app screen and each playlist's last track/shuffle state in UI
-- More robust natural-end vs manual-skip position reset logic
-- Automatic resume specifically after transient phone/audio-focus interruption and reconnect policy tests
-
-These are intentionally listed rather than silently faked in the UI.
+1. Finish durable offline copies for tracks imported from Google Drive/document providers.
+2. Add/finish artist and album metadata display and album-aware sorting.
+3. Continue tuning Colorscape/Kaleidoscope responsiveness using real music.
+4. Improve visual polish without sacrificing playback reliability.
+5. Keep every release versioned and compiler-verified before presenting the APK.
