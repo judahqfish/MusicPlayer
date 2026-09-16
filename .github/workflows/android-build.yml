@@ -47,6 +47,8 @@ jobs:
         run: python scripts/patch_ui_v0113.py
       - name: Patch v0.1.14 kaleidoscope UI
         run: python scripts/patch_ui_v0114.py
+      - name: Patch v0.1.16 playback and screensaver UI
+        run: python scripts/patch_ui_v0116.py
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
