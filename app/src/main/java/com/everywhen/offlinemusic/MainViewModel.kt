@@ -28,6 +28,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val speed = prefs.speed.stateIn(viewModelScope, SharingStarted.Eagerly, 1f)
     val amplifierDb = prefs.amplifierDb.stateIn(viewModelScope, SharingStarted.Eagerly, 0f)
     val visualizerScreensaver = prefs.visualizerScreensaver.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val visualizerStyle = prefs.visualizerStyle.stateIn(viewModelScope, SharingStarted.Eagerly, "Kaleidoscope")
 
     private val _controller = MutableStateFlow<MediaController?>(null)
     val controller: StateFlow<MediaController?> = _controller
@@ -189,6 +190,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setSpeed(value: Float) = viewModelScope.launch { prefs.setSpeed(value) }
     fun setAmplifierDb(value: Float) = viewModelScope.launch { prefs.setAmplifierDb(value) }
     fun setVisualizerScreensaver(enabled: Boolean) = viewModelScope.launch { prefs.setVisualizerScreensaver(enabled) }
+    fun setVisualizerStyle(style: String) = viewModelScope.launch { prefs.setVisualizerStyle(style) }
 
     fun playTracks(queue: List<TrackEntity>, startTrackId: Long, shuffle: Boolean = false) {
         viewModelScope.launch {
@@ -226,7 +228,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     .build()
             }
             runCatching {
-                c.setMediaItems(items, start, available[start].lastPositionMs)
+                val resumePosition = if (available[start].durationMs > 10L * 60L * 1000L) {
+                    available[start].lastPositionMs.coerceAtLeast(0L)
+                } else {
+                    0L
+                }
+                c.setMediaItems(items, start, resumePosition)
                 c.shuffleModeEnabled = shuffle
                 c.prepare()
                 c.play()
