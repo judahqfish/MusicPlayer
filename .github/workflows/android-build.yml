@@ -51,10 +51,12 @@ jobs:
         run: python scripts/patch_ui_v0116.py
       - name: Patch v0.1.17 smooth visualizer and resume rule
         run: python scripts/patch_v0117.py
+      - name: Patch v0.1.18 visualizer scenes
+        run: python scripts/patch_v0118.py
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: MusicPlayer-v0.1.17-apk
+          name: MusicPlayer-v0.1.18-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
