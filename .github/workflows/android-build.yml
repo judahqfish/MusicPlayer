@@ -65,10 +65,12 @@ jobs:
         run: python scripts/patch_v0123.py
       - name: Fix v0.1.23 Compose imports
         run: python scripts/patch_v0123_fix.py
+      - name: Patch v0.1.24 calm smoothed kaleidoscope
+        run: python scripts/patch_v0124.py
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: MusicPlayer-v0.1.23-apk
+          name: MusicPlayer-v0.1.24-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
