@@ -1,6 +1,7 @@
 package com.everywhen.offlinemusic
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -14,10 +15,12 @@ class PlayerPreferences(private val context: Context) {
     private val speedKey = floatPreferencesKey("playback_speed")
     private val lastScreenKey = stringPreferencesKey("last_screen")
     private val amplifierDbKey = floatPreferencesKey("amplifier_db")
+    private val visualizerScreensaverKey = booleanPreferencesKey("visualizer_screensaver")
 
     val speed: Flow<Float> = context.dataStore.data.map { it[speedKey] ?: 1f }
     val lastScreen: Flow<String> = context.dataStore.data.map { it[lastScreenKey] ?: "tracks" }
     val amplifierDb: Flow<Float> = context.dataStore.data.map { (it[amplifierDbKey] ?: 0f).coerceIn(0f, 12f) }
+    val visualizerScreensaver: Flow<Boolean> = context.dataStore.data.map { it[visualizerScreensaverKey] ?: false }
 
     suspend fun setSpeed(speed: Float) {
         context.dataStore.edit { it[speedKey] = speed }
@@ -29,5 +32,9 @@ class PlayerPreferences(private val context: Context) {
 
     suspend fun setAmplifierDb(db: Float) {
         context.dataStore.edit { it[amplifierDbKey] = db.coerceIn(0f, 12f) }
+    }
+
+    suspend fun setVisualizerScreensaver(enabled: Boolean) {
+        context.dataStore.edit { it[visualizerScreensaverKey] = enabled }
     }
 }
