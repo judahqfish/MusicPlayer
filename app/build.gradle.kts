@@ -61,5 +61,5 @@ dependencies {
     implementation("androidx.media3:media3-common:1.11.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    implementation("org.jetbrains.kotlinx-coroutines-guava:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.10.2")
 }
