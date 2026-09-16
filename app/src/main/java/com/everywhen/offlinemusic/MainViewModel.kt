@@ -27,6 +27,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val favorites = repo.favorites.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val speed = prefs.speed.stateIn(viewModelScope, SharingStarted.Eagerly, 1f)
     val amplifierDb = prefs.amplifierDb.stateIn(viewModelScope, SharingStarted.Eagerly, 0f)
+    val visualizerScreensaver = prefs.visualizerScreensaver.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _controller = MutableStateFlow<MediaController?>(null)
     val controller: StateFlow<MediaController?> = _controller
@@ -187,37 +188,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSpeed(value: Float) = viewModelScope.launch { prefs.setSpeed(value) }
     fun setAmplifierDb(value: Float) = viewModelScope.launch { prefs.setAmplifierDb(value) }
+    fun setVisualizerScreensaver(enabled: Boolean) = viewModelScope.launch { prefs.setVisualizerScreensaver(enabled) }
 
     fun playTracks(queue: List<TrackEntity>, startTrackId: Long, shuffle: Boolean = false) {
-        val c = _controller.value
-        if (c == null) {
-            connectController()
-            _message.value = "Starting playback service… tap the track again in a moment."
-            return
-        }
-        val available = queue.filterNot { it.unavailable }
-        if (available.isEmpty()) {
-            _message.value = "No available audio files in this queue."
-            return
-        }
-        val start = available.indexOfFirst { it.id == startTrackId }.let { if (it >= 0) it else 0 }
-        val items = available.map { track ->
-            val metadata = MediaMetadata.Builder().setTitle(track.title())
-            track.artist?.takeIf { it.isNotBlank() }?.let(metadata::setArtist)
-            track.album?.takeIf { it.isNotBlank() }?.let(metadata::setAlbumTitle)
-            MediaItem.Builder()
-                .setMediaId(track.id.toString())
-                .setUri(track.uri)
-                .setMediaMetadata(metadata.build())
-                .build()
-        }
-        runCatching {
-            c.setMediaItems(items, start, available.getOrNull(start)?.lastPositionMs ?: 0L)
-            c.shuffleModeEnabled = shuffle
-            c.prepare()
-            c.play()
-        }.onFailure {
-            _message.value = "That file could not be played."
+        viewModelScope.launch {
+            val c = _controller.value
+            if (c == null) {
+                connectController()
+                _message.value = "Starting playback service… tap the track again in a moment."
+                return@launch
+            }
+
+            val preparation = repo.prepareTracksForPlayback(queue.filterNot { it.unavailable })
+            val available = preparation.tracks
+            if (startTrackId in preparation.failedTrackIds) {
+                _message.value = "This track does not have a usable offline copy yet. Re-add it while online."
+                return@launch
+            }
+            if (available.isEmpty()) {
+                _message.value = "No playable offline audio files in this queue."
+                return@launch
+            }
+            val start = available.indexOfFirst { it.id == startTrackId }
+            if (start < 0) {
+                _message.value = "That track is not available offline."
+                return@launch
+            }
+
+            val items = available.map { track ->
+                val metadata = MediaMetadata.Builder().setTitle(track.title())
+                track.artist?.takeIf { it.isNotBlank() }?.let(metadata::setArtist)
+                track.album?.takeIf { it.isNotBlank() }?.let(metadata::setAlbumTitle)
+                MediaItem.Builder()
+                    .setMediaId(track.id.toString())
+                    .setUri(track.uri)
+                    .setMediaMetadata(metadata.build())
+                    .build()
+            }
+            runCatching {
+                c.setMediaItems(items, start, available[start].lastPositionMs)
+                c.shuffleModeEnabled = shuffle
+                c.prepare()
+                c.play()
+            }.onFailure {
+                _message.value = "That local audio file could not be played."
+            }
         }
     }
 
