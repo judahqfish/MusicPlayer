@@ -12,8 +12,8 @@ android {
         applicationId = "com.everywhen.offlinemusic"
         minSdk = 26
         targetSdk = 37
-        versionCode = 25
-        versionName = "0.1.24"
+        versionCode = 26
+        versionName = "0.1.25"
     }
 
     buildFeatures { compose = true }
@@ -61,5 +61,5 @@ dependencies {
     implementation("androidx.media3:media3-common:1.11.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.10.2")
+    implementation("org.jetbrains.kotlinx-coroutines-guava:1.10.2")
 }
