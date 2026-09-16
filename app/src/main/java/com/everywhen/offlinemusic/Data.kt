@@ -116,6 +116,9 @@ interface MusicDao {
     @Query("UPDATE tracks SET artist = :artist, album = :album, durationMs = :duration, metadataScanned = 1 WHERE id = :id")
     suspend fun updateMetadata(id: Long, artist: String?, album: String?, duration: Long)
 
+    @Query("UPDATE tracks SET durationMs = :duration WHERE id = :id")
+    suspend fun updateDuration(id: Long, duration: Long)
+
     @Query("UPDATE tracks SET uri = :uri, unavailable = 0 WHERE id = :id")
     suspend fun updateTrackUri(id: Long, uri: String)
 
