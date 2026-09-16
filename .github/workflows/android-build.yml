@@ -55,12 +55,14 @@ jobs:
         run: python scripts/patch_v0118.py
       - name: Patch v0.1.19 instant playback and continuous visualizer
         run: python scripts/patch_v0119.py
-      - name: Patch v0.1.20 responsive colorscape and kaleidoscope
+      - name: Patch v0.1.20 responsive colorscape and waveform contrast
         run: python scripts/patch_v0120.py
+      - name: Patch v0.1.21 true mirrored wedge kaleidoscope
+        run: python scripts/patch_v0121.py
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: MusicPlayer-v0.1.20-apk
+          name: MusicPlayer-v0.1.21-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
