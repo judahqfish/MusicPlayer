@@ -24,8 +24,6 @@ data class TrackEntity(
     private fun baseTitle(): String = displayName?.takeIf { it.isNotBlank() }
         ?: fileName.substringBeforeLast('.', fileName)
 
-    // Album comes first intentionally: A–Z/name sorting keeps each album together,
-    // then sorts by the track name within that album.
     fun title(): String {
         val base = baseTitle()
         val cleanAlbum = album?.takeIf { it.isNotBlank() }
@@ -89,6 +87,9 @@ interface MusicDao {
     @Query("SELECT * FROM tracks ORDER BY fileName COLLATE NOCASE")
     fun observeTracks(): Flow<List<TrackEntity>>
 
+    @Query("SELECT * FROM tracks ORDER BY fileName COLLATE NOCASE")
+    suspend fun allTracks(): List<TrackEntity>
+
     @Query("SELECT * FROM tracks WHERE favorite = 1 ORDER BY fileName COLLATE NOCASE")
     fun observeFavorites(): Flow<List<TrackEntity>>
 
@@ -114,6 +115,9 @@ interface MusicDao {
 
     @Query("UPDATE tracks SET artist = :artist, album = :album, durationMs = :duration, metadataScanned = 1 WHERE id = :id")
     suspend fun updateMetadata(id: Long, artist: String?, album: String?, duration: Long)
+
+    @Query("UPDATE tracks SET uri = :uri, unavailable = 0 WHERE id = :id")
+    suspend fun updateTrackUri(id: Long, uri: String)
 
     @Query("UPDATE tracks SET lastPositionMs = :position WHERE id = :id")
     suspend fun savePosition(id: Long, position: Long)
@@ -162,6 +166,9 @@ interface MusicDao {
 
     @Update suspend fun updateTag(tag: TagEntity)
     @Delete suspend fun deleteTag(tag: TagEntity)
+
+    @Query("SELECT tracks.* FROM tracks INNER JOIN track_tags ON tracks.id = track_tags.tagId WHERE track_tags.tagId = :tagId ORDER BY tracks.fileName COLLATE NOCASE")
+    fun observeTagTracksBroken(tagId: Long): Flow<List<TrackEntity>>
 
     @Query("SELECT tracks.* FROM tracks INNER JOIN track_tags ON tracks.id = track_tags.trackId WHERE track_tags.tagId = :tagId ORDER BY tracks.fileName COLLATE NOCASE")
     fun observeTagTracks(tagId: Long): Flow<List<TrackEntity>>
