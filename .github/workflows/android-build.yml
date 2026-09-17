@@ -110,9 +110,8 @@ jobs:
             adb uninstall com.everywhen.offlinemusic || true
             echo 'Historical artifact contents:'
             find /tmp/historical-v0130 -maxdepth 2 -type f -ls
-            OLD_APK=$(find /tmp/historical-v0130 -type f -name '*.apk' | head -1)
-            test -n "$OLD_APK"
-            adb install "$OLD_APK"
+            test -f /tmp/historical-v0130/app-debug.apk
+            adb install /tmp/historical-v0130/app-debug.apk
             adb shell dumpsys package com.everywhen.offlinemusic | grep -E 'versionCode=|versionName='
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell dumpsys package com.everywhen.offlinemusic | grep -E 'versionCode=|versionName='
