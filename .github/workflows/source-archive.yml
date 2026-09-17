@@ -1,0 +1,27 @@
+name: Source Archive
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package source without signing secrets
+        run: |
+          mkdir -p /tmp/source
+          rsync -a ./ /tmp/source/MusicPlayer/ \
+            --exclude '.git/' \
+            --exclude '.gradle/' \
+            --exclude '**/build/' \
+            --exclude 'app/src/main/signing/'
+          cd /tmp/source
+          zip -qr /tmp/MusicPlayer-source-v0.1.35.zip MusicPlayer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicPlayer-source-v0.1.35
+          path: /tmp/MusicPlayer-source-v0.1.35.zip
+          retention-days: 1
