@@ -3,11 +3,18 @@ package com.everywhen.offlinemusic
 import android.app.Application
 import java.io.PrintWriter
 import java.io.StringWriter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.launch
 
 class MusicApplication : Application() {
     val database by lazy { MusicDatabase.create(this) }
     val repository by lazy { MusicRepository(this, database.musicDao()) }
 
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val crashFile by lazy { filesDir.resolve("last_crash.txt") }
 
     override fun onCreate() {
@@ -20,6 +27,17 @@ class MusicApplication : Application() {
                 crashFile.writeText(writer.toString())
             }
             previous?.uncaughtException(thread, throwable)
+        }
+
+        // Keep one small metadata backup outside app-private storage. Room flows
+        // invalidate when playlist/tag membership or ordering changes, so this
+        // automatically refreshes the file after edits while debouncing bursts.
+        applicationScope.launch {
+            combine(repository.playlists, repository.tags) { _, _ -> Unit }
+                .debounce(1500)
+                .collect {
+                    runCatching { writeLibraryBackup(this@MusicApplication, repository) }
+                }
         }
     }
 
