@@ -87,20 +87,20 @@ jobs:
         run: python scripts/patch_v0134.py
       - name: Build current debug APK
         run: gradle :app:assembleDebug --no-daemon
-      - name: Download exact historical v0.1.30 artifact
+      - name: Download exact v0.1.34 artifact
         uses: actions/download-artifact@v4
         with:
-          name: MusicPlayer-v0.1.30-apk
-          path: /tmp/historical-v0130
+          name: MusicPlayer-v0.1.34-apk
+          path: /tmp/historical-v0134
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: judahqfish/MusicPlayer
-          run-id: 35154221340
+          run-id: 35203867113
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Exact historical upgrade plus runtime visualizer test
+      - name: In-place upgrade plus runtime visualizer test
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -108,12 +108,14 @@ jobs:
           profile: pixel_7
           script: |
             set -eux
-            test -f /tmp/historical-v0130/app-debug.apk
-            adb install /tmp/historical-v0130/app-debug.apk
+            test -f /tmp/historical-v0134/app-debug.apk
+            adb install /tmp/historical-v0134/app-debug.apk
+            adb shell dumpsys package com.everywhen.offlinemusic | grep -E 'versionCode=|versionName='
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell dumpsys package com.everywhen.offlinemusic | grep -E 'versionCode=|versionName='
             gradle :app:connectedDebugAndroidTest --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: MusicPlayer-v0.1.34-apk
+          name: MusicPlayer-v0.1.35-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
