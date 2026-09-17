@@ -26,13 +26,13 @@ jobs:
           gradle-version: '9.6.0'
       - name: Install persistent debug signing key
         run: |
-          mkdir -p "$HOME/.android"
           python - <<'PY'
           import base64
           from pathlib import Path
           src = Path('app/src/main/signing/musicplayer-debug.keystore.b64').read_text()
           cleaned = ''.join(src.split())
-          Path.home().joinpath('.android/debug.keystore').write_bytes(base64.b64decode(cleaned, validate=False))
+          target = Path('app/src/main/signing/musicplayer-debug.keystore')
+          target.write_bytes(base64.b64decode(cleaned, validate=False))
           PY
       - name: Install selected launcher icon
         run: |
@@ -95,6 +95,13 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: judahqfish/MusicPlayer
           run-id: 35203867113
+      - name: Compare APK signing certificates
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          echo 'Historical v0.1.34 signer:'
+          "$APKSIGNER" verify --print-certs /tmp/historical-v0134/app-debug.apk
+          echo 'Current v0.1.35 signer:'
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
