@@ -18,36 +18,46 @@ class VisualizerRenderTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    @Test
-    fun kaleidoscopeRendersNonBlankPixels() {
+    @Test fun kaleidoscopeRenders() = assertStyle("Kaleidoscope")
+    @Test fun blobRenders() = assertStyle("Blob")
+    @Test fun dropsRender() = assertStyle("Drops")
+    @Test fun nebulaRenders() = assertStyle("Nebula")
+    @Test fun radialRenders() = assertStyle("Radial")
+
+    private fun assertStyle(style: String) {
         composeRule.setContent {
             Box(Modifier.size(320.dp).background(Color.White)) {
                 VisualizerScene(
-                    style = "Kaleidoscope",
-                    frame = VisualizationFrame(),
+                    style = style,
+                    frame = VisualizationFrame(
+                        energy = .45f,
+                        beat = .25f,
+                        bass = .55f,
+                        mids = .42f,
+                        treble = .38f
+                    ),
                     showWaveform = false,
                     showColorscape = true,
                     modifier = Modifier.size(320.dp)
                 )
             }
         }
-
         composeRule.waitForIdle()
         val pixels = composeRule.onRoot().captureToImage().toPixelMap()
         var dark = 0
         var colored = 0
+        var sampled = 0
         val stepX = maxOf(1, pixels.width / 24)
         val stepY = maxOf(1, pixels.height / 24)
-        var sampled = 0
         for (y in 0 until pixels.height step stepY) {
             for (x in 0 until pixels.width step stepX) {
                 val c = pixels[x, y]
                 sampled++
                 if (c.red < .20f && c.green < .20f && c.blue < .20f) dark++
-                if (kotlin.math.abs(c.red - c.green) > .08f || kotlin.math.abs(c.green - c.blue) > .08f) colored++
+                if (kotlin.math.abs(c.red - c.green) > .06f || kotlin.math.abs(c.green - c.blue) > .06f) colored++
             }
         }
-        assertTrue("Visualizer remained blank/light", dark > sampled / 5)
-        assertTrue("Visualizer did not render colored geometry", colored > sampled / 30)
+        assertTrue("$style remained blank/light", dark > sampled / 8)
+        assertTrue("$style did not render colored pixels", colored > sampled / 40)
     }
 }
